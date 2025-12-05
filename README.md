@@ -1,2 +1,3 @@
-# SMS-DB
-The SMS workflow, in pure Python and SQLite database.
+# ONT-SMA-seq
+
+The SMA-seq workflow for Oxford Nanopore Technology, in pure Python and SQLite database.
