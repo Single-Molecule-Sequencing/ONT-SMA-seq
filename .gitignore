@@ -1,0 +1,74 @@
+# gitignore
+
+# Nextflow runtime caches & logs
+.nextflow
+.nextflow.log*
+*.nextflow.log*
+work/
+.cache/
+*.trace
+*.dot
+*.log
+*.html
+
+# Results
+results/
+publish/
+reports/
+intermediate/
+plots/
+
+# Development dirs
+dev/
+backup/
+
+# Large raw sequencing data
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bam.bai
+*.sam
+*.cram
+*.cram.crai
+*.bai
+*.pod5
+*.fast5
+*.h5
+*.vcf
+*.vcf.gz
+*.bed
+*.bed.gz
+*.bw
+*.wig
+
+# Reference genomes
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.mmi
+*.fai
+*.dict
+
+# Large archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Python / Conda / virtual env clutter
+__pycache__/
+*.pyc
+.env/
+.venv/
+*.conda
+.envrc
+
+# OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
