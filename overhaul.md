@@ -111,22 +111,31 @@ The overhaul turns the original NextFlow pipeline into an efficient database str
 
 **Reads** table
 
-| Column        | Type          | Description                                  |
-| :------------ | :------------ | :------------------------------------------- |
-| `uniq_id`     | **TEXT (PK)** | Composite unique identifier.                 |
-| `exp_id`      | TEXT (FK)     | Experiment ID.                               |
-| `refseq_id`   | TEXT (FK)     | RefSeq ID. **NULL** if length out of range.  |
-| `read_id`     | TEXT          | Original ONT Read UUID.                      |
-| `readseq`     | TEXT          | The Basecalled Read Sequence.                |
-| `readlen`     | INT           | Length of the Read.                          |
-| `model_tier`  | TEXT          | 's', 'h', or 'f'.                            |
-| `model_ver`   | TEXT          | e.g., '5.2.0'.                               |
-| `trim`        | INT           | 1 (True) or 0 (False).                       |
-| `mod_bitflag` | INT (FK)      | Integer sum of modification flags.           |
-| `ed`          | INT           | Levenshtein Distance. **NULL** if no RefSeq. |
-| `q_bc`        | REAL          | Probability-averaged basecall quality.       |
-| `q_ld`        | REAL          | Levenshtein quality. **NULL** if no RefSeq.  |
-| `ER`          | TEXT          | End Reason (e.g., `signal_positive`).        |
+| Column          | Type          | Description                                  |
+| :-------------- | :------------ | :------------------------------------------- |
+| `uniq_id`       | **TEXT (PK)** | Composite unique identifier.                 |
+| `exp_id`        | TEXT (FK)     | Experiment ID.                               |
+| `refseq_id`     | TEXT (FK)     | RefSeq ID. **NULL** if length out of range.  |
+| `read_id`       | TEXT          | Original ONT Read UUID.                      |
+| `readseq`       | TEXT          | The Basecalled Read Sequence.                |
+| `readlen`       | INT           | Length of the Read.                          |
+| `model_tier`    | TEXT          | 's', 'h', or 'f'.                            |
+| `model_ver`     | TEXT          | e.g., '5.2.0'.                               |
+| `trim`          | INT           | 1 (True) or 0 (False).                       |
+| `mod_bitflag`   | INT (FK)      | Integer sum of modification flags.           |
+| `ed`            | INT           | Levenshtein Distance. **NULL** if no RefSeq. |
+| `q_bc`          | REAL          | Probability-averaged basecall quality.       |
+| `q_ld`          | REAL          | Levenshtein quality. **NULL** if no RefSeq.  |
+| `ER`            | TEXT          | End Reason.                                  |
+| `forced`        | INT           | Forced Status. ("0" or "1")                  |
+| `channel`       | INT           | Physical Channel.                            |
+| `well`          | INT           | Well Index.                                  |
+| `pore_type`     | TEXT          | Pore Type.                                   |
+| `num_samples`   | INT           | Duration in samples.                         |
+| `start_sample`  | INT           | Start timestamp.                             |
+| `median_before` | REAL          | Signal median before read.                   |
+| `scale`         | REAL          | PA Scale.                                    |
+| `offset`        | REAL          | PA Offset.                                   |
 
 **Mods** table (Populated by `mkdb.py`)
 
