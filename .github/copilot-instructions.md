@@ -24,7 +24,7 @@ Creates the SQLite schema and populates static reference tables.
 - Input: Experiment ID (exp_id)
 - Output: `SMA_{exp_id}.db` file
 - Creates tables: Reads, Mods, Exp, Refseq
-- Pre-populates Mods table with modification bitflag mappings
+- Pre-populates Mods table with modification bitflag mappings (only Mods table is populated by this script)
 
 #### 2. inputInit.py - Input Standardization  
 Parses metadata from filenames and creates standardized symlinks.
@@ -68,7 +68,7 @@ Example: `5mC_5hmC` (4) + `6mA` (1) = 5
 #### Reads Table
 Primary data storage. Key columns:
 ```
-uniq_id       TEXT PRIMARY KEY   Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+uniq_id       TEXT PRIMARY KEY   Format: {exp_id}{bc_model_type}{bc_model_version}t{trim}m{mod_bitflag}_{read_hash}
 refseq_id     TEXT FOREIGN KEY   NULL if read length outside reference range
 ed            INT                Levenshtein distance (NULL if refseq_id is NULL)
 q_bc          REAL               Probability-averaged basecall quality
@@ -100,8 +100,9 @@ reflen        INT                Sequence length
 **Basecall Quality (q_bc)** - Always calculated:
 ```python
 import math
-q_bc = -10 * math.log10(sum(10**(-Q_base/10)) / n)
+q_bc = -10 * math.log10(sum(10**(-q/10) for q in quality_scores) / len(quality_scores))
 ```
+where `quality_scores` is the array of per-base quality values from the read.
 
 **Levenshtein Quality (q_ld)** - Only when refseq_id is matched:
 ```python
@@ -147,7 +148,7 @@ SMA_{exp_id}.db
 ### BAM Processing
 - Always use context managers (`with pysam.AlignmentFile(...)`)
 - Add SAM tag `ER:Z:<end_reason>` to every output read
-- Output BAM goes to `Output/{exp_id}.bam`
+- Creates `Output/{exp_id}/` directory, output BAM written to `Output/{exp_id}.bam`
 
 ### Database Operations
 - Use parameterized queries (no string interpolation)
@@ -177,11 +178,11 @@ mod_bitflag = int(parts[4])
 
 ### Constructing uniq_id
 ```python
-# Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+# Format: {exp_id}{bc_model_type}{bc_model_version}t{trim}m{mod_bitflag}_{read_hash}
 # Example: exp123h5.2.0t1m5_abc123
 import hashlib
 read_hash = hashlib.sha256(read_id.encode()).hexdigest()[:8]
-uniq_id = f"{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}"
+uniq_id = f"{exp_id}{bc_model_type}{bc_model_version}t{trim}m{mod_bitflag}_{read_hash}"
 ```
 
 ### Pod5 End Reason Lookup
