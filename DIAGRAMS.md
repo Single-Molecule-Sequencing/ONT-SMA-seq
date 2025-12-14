@@ -110,7 +110,7 @@ erDiagram
     }
     
     Reads }|--|| Exp : "exp_id"
-    Reads }o--|| Refseq : "refseq_id"
+    Refseq ||--o{ Reads : "refseq_id"
     Reads }|--|| Mods : "mod_bitflag"
 ```
 
