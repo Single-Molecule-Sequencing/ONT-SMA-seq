@@ -137,7 +137,7 @@ erDiagram
 
 | Modification | Bit Value (2^n) | Integer | Logic |
 |:------------|:---------------|:--------|:------|
-| **non** | 0 | 0 | No modifications |
+| **non** | N/A | 0 | No modifications |
 | **6mA** | 2^0 = 1 | 1 | Independent (can coexist) |
 | **5mCG_5hmCG** | 2^1 = 2 | 2 | Mutually exclusive C-Mod |
 | **5mC_5hmC** | 2^2 = 4 | 4 | Mutually exclusive C-Mod |
