@@ -57,6 +57,8 @@ Processes reads, calculates metrics (quality scores, Levenshtein distance), and 
 Run the end-to-end test to verify the pipeline:
 
 ```bash
+./run_test.sh
+# or
 python test_e2e.py
 ```
 
@@ -67,6 +69,8 @@ This test:
 - Cleans up test artifacts
 
 Expected output: All tests should pass with `✓ ✓ ✓ ALL TESTS PASSED ✓ ✓ ✓`
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## Documentation
 
