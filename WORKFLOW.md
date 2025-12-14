@@ -49,7 +49,7 @@ flowchart TD
     WriteBAM --> MatchRef{Read Length<br/>in Reference<br/>Range?}
     
     MatchRef -->|Yes| CalcED[Calculate Edit Distance<br/>ed = Levenshtein<br/>read_seq, ref_seq]
-    CalcED --> CalcQLD[Calculate q_ld<br/>-10*log10min max<br/>1/L², ed/L, 1]
+    CalcED --> CalcQLD[Calculate q_ld<br/>-10*log10(min(max(<br/>1/L², ed/L), 1))]
     CalcQLD --> SetRef[Set refseq_id]
     
     MatchRef -->|No| SetNull[Set refseq_id = NULL<br/>ed = NULL<br/>q_ld = NULL]
