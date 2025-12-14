@@ -7,6 +7,7 @@ The SMA-seq protocol for Oxford Nanopore Technology, in pure Python and SQLite d
 - **[SUMMARY.md](SUMMARY.md)** - Quick reference with ASCII diagrams and text-based flowcharts
 - **[WORKFLOW.md](WORKFLOW.md)** - Comprehensive workflow flowcharts, database schema diagrams, and data flow documentation
 - **[DIAGRAMS.md](DIAGRAMS.md)** - Quick reference diagrams for pipeline architecture and data structures
+- **[TESTING.md](TESTING.md)** - Testing guide and test suite documentation
 - **[overhaul.md](overhaul.md)** - Detailed technical specification and implementation notes
 
 ## Quick Overview
