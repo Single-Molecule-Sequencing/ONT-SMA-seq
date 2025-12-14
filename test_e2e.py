@@ -32,7 +32,6 @@ except ImportError:
 
 try:
     import pod5
-    from pod5.tools import pod5_convert_from_fast5
 except ImportError:
     print("Error: pod5 is required. Install with: pip install pod5", file=sys.stderr)
     sys.exit(1)
