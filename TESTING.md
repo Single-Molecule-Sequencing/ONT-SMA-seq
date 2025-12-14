@@ -1,4 +1,4 @@
-# Testing Guide
+# Testing the ONT-SMA-seq Pipeline
 
 This document describes how to test the ONT-SMA-seq pipeline.
 
