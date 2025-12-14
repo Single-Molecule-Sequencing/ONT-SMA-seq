@@ -33,16 +33,6 @@ python inputInit.py --bam data/EXP001_h_v5.2.0_1_6mA.bam --pod5 data/pod5/ --ref
 python ingest.py EXP001
 ```
 
-## Testing
-
-Run the comprehensive test suite:
-
-```bash
-python test_pipeline.py
-```
-
-See [TESTING.md](TESTING.md) for detailed testing documentation.
-
 ## Dependencies
 
 ```bash
