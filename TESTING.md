@@ -1,143 +1,153 @@
-# ONT-SMA-seq Testing Documentation
+# Testing the ONT-SMA-seq Pipeline
 
-## Test Coverage Summary
+This document describes how to test the ONT-SMA-seq pipeline.
 
-This pipeline has been fully tested with a comprehensive test suite consisting of 25 tests across 4 test modules.
+## Quick Test
 
-### Test Results
+Run the comprehensive test suite:
 
-```
-✓ 25 tests passing
-✓ 0 tests failing
-✓ 100% success rate
-```
-
-## Test Modules
-
-### 1. Unit Tests: `test_mkdb.py` (4 tests)
-
-Tests for database initialization script:
-
-- ✓ `test_create_tables` - Verifies all database tables are created correctly
-- ✓ `test_populate_mods_table` - Verifies modification bitflags are populated
-- ✓ `test_main_creates_database` - Tests end-to-end database creation
-- ✓ `test_main_overwrites_existing_database` - Tests database overwrite functionality
-
-### 2. Unit Tests: `test_inputInit.py` (10 tests)
-
-Tests for input standardization script:
-
-- ✓ `test_parse_bam_filename_valid` - Tests parsing of valid BAM filename
-- ✓ `test_parse_bam_filename_complex` - Tests parsing with complex experiment IDs
-- ✓ `test_parse_bam_filename_no_mods` - Tests parsing with no modifications
-- ✓ `test_parse_bam_filename_invalid` - Tests error handling for invalid filenames
-- ✓ `test_create_symlink` - Tests creating symbolic links to files
-- ✓ `test_create_symlink_directory` - Tests creating symbolic links to directories
-- ✓ `test_create_symlink_source_not_exists` - Tests error handling for missing sources
-- ✓ `test_create_symlink_target_exists` - Tests error handling for existing targets
-- ✓ `test_create_symlink_force_overwrite` - Tests force overwrite functionality
-- ✓ `test_main_creates_symlinks` - Tests end-to-end symlink creation
-
-### 3. Unit Tests: `test_ingest.py` (9 tests)
-
-Tests for main processing script:
-
-- ✓ `test_calculate_q_bc` - Tests basecall quality calculation
-- ✓ `test_calculate_levenshtein` - Tests Levenshtein distance calculation
-- ✓ `test_calculate_q_ld` - Tests Levenshtein quality calculation
-- ✓ `test_match_reference` - Tests reference sequence matching
-- ✓ `test_generate_uniq_id` - Tests unique ID generation
-- ✓ `test_parse_bam_filename` - Tests BAM filename parsing
-- ✓ `test_get_mod_bitflag` - Tests modification bitflag conversion
-- ✓ `test_parse_reference_fasta` - Tests reference FASTA parsing
-- ✓ `test_parse_reference_fasta_wrong_count` - Tests error handling for wrong sequence count
-
-### 4. Integration Tests: `test_integration.py` (2 tests)
-
-Tests for complete pipeline:
-
-- ✓ `test_pipeline_integration` - Tests full pipeline workflow
-- ✓ `test_database_schema` - Verifies database schema matches specification
-
-## Running Tests
-
-### Run all tests:
 ```bash
-pytest tests/
+python test_pipeline.py
 ```
 
-### Run with verbose output:
+This will:
+1. Create test data using `test_setup.py`
+2. Test database creation with `mkdb.py`
+3. Test input standardization with `inputInit.py`
+4. Test read processing with `ingest.py`
+5. Verify database integrity and data quality
+6. Clean up all test artifacts
+
+## Test Coverage
+
+The test suite (`test_pipeline.py`) includes **17 tests** covering:
+
+### mkdb.py (3 tests)
+- ✓ Database file creation
+- ✓ Database schema (all tables present)
+- ✓ Mods table population
+
+### inputInit.py (4 tests)
+- ✓ Input directory creation
+- ✓ BAM symlink creation
+- ✓ Pod5 directory symlink creation
+- ✓ Reference FASTA symlink creation
+
+### ingest.py (7 tests)
+- ✓ Output directory creation
+- ✓ Output BAM file creation
+- ✓ Database read insertion
+- ✓ Reference sequence population
+- ✓ Reference matching logic
+- ✓ Quality metric calculation (q_bc)
+- ✓ Levenshtein distance calculation
+
+### Integration (3 tests)
+- ✓ Complete read data in database
+- ✓ Unique ID format validation
+- ✓ Foreign key relationship integrity
+
+## Manual Testing
+
+### 1. Create Test Data
+
 ```bash
-pytest tests/ -v
+python test_setup.py
 ```
 
-### Run specific test module:
+This creates:
+- `test_data/reference.fa` - Reference FASTA with 2 sequences (200bp and 500bp)
+- `test_data/TEST001_h_v5.2.0_1_6mA.bam` - Test BAM with 50 reads
+- `test_data/pod5/` - Empty Pod5 directory (end reasons will be 'unknown')
+
+### 2. Run Pipeline
+
 ```bash
-pytest tests/test_mkdb.py -v
-pytest tests/test_inputInit.py -v
-pytest tests/test_ingest.py -v
-pytest tests/test_integration.py -v
+# Initialize database
+python mkdb.py TEST001
+
+# Standardize inputs
+python inputInit.py --bam test_data/TEST001_h_v5.2.0_1_6mA.bam \
+                    --pod5 test_data/pod5 \
+                    --ref test_data/reference.fa
+
+# Process reads
+python ingest.py TEST001
 ```
 
-### Run with coverage:
+### 3. Verify Results
+
+Check database contents:
+
 ```bash
-pytest tests/ --cov=. --cov-report=html
+# Count total reads
+sqlite3 SMA_TEST001.db "SELECT COUNT(*) FROM Reads;"
+
+# View reference distribution
+sqlite3 SMA_TEST001.db "SELECT refseq_id, COUNT(*) FROM Reads GROUP BY refseq_id;"
+
+# Check quality metrics
+sqlite3 SMA_TEST001.db "SELECT AVG(q_bc), AVG(q_ld) FROM Reads WHERE refseq_id IS NOT NULL;"
 ```
 
-## Manual Verification
+Check output BAM:
 
-The scripts have been manually tested and verified to work correctly:
-
-### mkdb.py
 ```bash
-$ python mkdb.py demo_exp
-Created database schema in SMA_demo_exp.db
-Populated Mods table with modification bitflags
-Successfully initialized database: SMA_demo_exp.db
-
-$ sqlite3 SMA_demo_exp.db "SELECT * FROM Mods;"
-0|non
-1|6mA
-2|5mCG_5hmCG
-...
+samtools view -c Output/TEST001.bam
 ```
 
-### inputInit.py
+### 4. Clean Up
+
 ```bash
-$ python inputInit.py demo_exp_s_v5.2.0_1_6mA.bam pod5/ ref.fa
-Parsed metadata from BAM filename:
-  Experiment ID: demo_exp
-  Model Tier: s
-  Model Version: 5.2.0
-  Trim: 1
-  Modifications: 6mA
-
-Created directory: Input
-Created symlink: Input/demo_exp_s_v5.2.0_1_6mA.bam -> demo_exp_s_v5.2.0_1_6mA.bam
-Created symlink: Input/demo_exp_pod5 -> pod5/
-Created symlink: Input/demo_exp.fa -> ref.fa
-
-Successfully standardized inputs in Input
+rm -rf SMA_TEST001.db Input/ Output/ test_data/
 ```
 
-## Test Quality Metrics
+## Test Results Example
 
-- **Code Coverage**: Core functionality fully tested
-- **Edge Cases**: Error handling and boundary conditions tested
-- **Integration**: Full pipeline workflow verified
-- **Documentation**: All tests have clear docstrings
-- **Maintainability**: Tests are independent and reproducible
+```
+======================================================================
+ONT-SMA-seq Pipeline Test Suite
+======================================================================
+
+--- Testing mkdb.py ---
+✓ mkdb: Database file created
+✓ mkdb: All required tables created
+✓ mkdb: Mods table populated
+
+--- Testing inputInit.py ---
+✓ inputInit: Input directory created
+✓ inputInit: Created TEST001_h_v5.2.0_1_6mA.bam
+✓ inputInit: Created TEST001_pod5
+✓ inputInit: Created TEST001.fa
+
+--- Testing ingest.py ---
+✓ ingest: Output directory created
+✓ ingest: Output BAM created
+✓ ingest: Reads inserted into database
+✓ ingest: Reference sequences populated
+✓ ingest: Reference matching performed
+✓ ingest: Quality metrics (q_bc) calculated
+✓ ingest: Levenshtein distance calculated for matched reads
+
+--- Testing Pipeline Integration ---
+✓ integration: Database contains complete read data
+✓ integration: Unique ID format correct
+✓ integration: Modification foreign keys valid
+
+======================================================================
+Test Results: 17/17 passed
+======================================================================
+```
 
 ## Dependencies
 
-Testing requires the following packages:
-- pytest >= 7.0.0
-- pysam >= 0.21.0
-- edlib >= 1.3.9
-- pod5 >= 0.2.0
+Testing requires:
+- Python 3.6+
+- pysam
+- edlib
+- pod5 (optional - pipeline handles missing pod5 gracefully)
 
 Install with:
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+pip install pysam edlib pod5
 ```

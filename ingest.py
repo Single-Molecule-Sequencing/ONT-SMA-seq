@@ -1,415 +1,497 @@
 #!/usr/bin/env python3
 """
-Main Processing Script for ONT-SMA-seq Pipeline
+ingest.py - Main Processing Script
 
 Parses inputs, calculates metrics, tags BAMs, and populates the database.
+This is the core data ingestion pipeline for ONT-SMA-seq.
+
+Usage:
+    python ingest.py <exp_id> [--db <database_path>]
+
+Prerequisites:
+    - Database must be created with mkdb.py
+    - Input files must be standardized with inputInit.py
+
+Input Structure:
+    Input/
+    ├── {exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam
+    ├── {exp_id}_pod5/
+    └── {exp_id}.fa
+
+Output:
+    Output/
+    └── {exp_id}.bam  (with ER tags added)
 """
 
 import argparse
+import glob
 import hashlib
 import math
+import os
 import re
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 try:
     import pysam
 except ImportError:
-    print('Error: pysam is not installed. Install with: pip install pysam', file=sys.stderr)
+    print("Error: pysam is required. Install with: pip install pysam", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    import pod5
+except ImportError:
+    print("Error: pod5 is required. Install with: pip install pod5", file=sys.stderr)
     sys.exit(1)
 
 try:
     import edlib
 except ImportError:
-    print('Error: edlib is not installed. Install with: pip install edlib', file=sys.stderr)
-    sys.exit(1)
-
-try:
-    import pod5 as p5
-except ImportError:
-    print('Error: pod5 is not installed. Install with: pip install pod5', file=sys.stderr)
+    print("Error: edlib is required. Install with: pip install edlib", file=sys.stderr)
     sys.exit(1)
 
 
-def parse_reference_fasta(fasta_path):
+# Modification bitflag mapping
+MOD_BITFLAGS = {
+    "non": 0,
+    "6mA": 1,
+    "5mCG_5hmCG": 2,
+    "5mC_5hmC": 4,
+    "4mC_5mC": 8,
+    "5mC": 16,
+}
+
+# Length tolerance for reference matching
+LENGTH_TOLERANCE = 150
+
+
+def parse_bam_filename(bam_path: str) -> Optional[Dict]:
     """
-    Parse reference FASTA file.
-    
-    Expected to contain exactly 2 sequences (long and short).
-    Returns dictionary: {defline: [seq, len, range]}
+    Parse metadata from BAM filename.
+
+    Expected format: {exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam
+    """
+    filename = os.path.basename(bam_path)
+
+    if not filename.endswith(".bam"):
+        return None
+
+    base = filename[:-4]
+    pattern = r"^(.+)_([shf])_v([\d.]+)_([01])_(.+)$"
+    match = re.match(pattern, base)
+
+    if not match:
+        return None
+
+    exp_id, model_tier, model_ver, trim, mods_str = match.groups()
+
+    # Parse modification string to bitflag
+    mod_bitflag = 0
+    if mods_str != "non":
+        for mod in mods_str.split("+"):
+            mod = mod.strip()
+            if mod in MOD_BITFLAGS:
+                mod_bitflag += MOD_BITFLAGS[mod]
+
+    return {
+        "exp_id": exp_id,
+        "model_tier": model_tier,
+        "model_ver": model_ver,
+        "trim": int(trim),
+        "mods_str": mods_str,
+        "mod_bitflag": mod_bitflag,
+    }
+
+
+def parse_reference_fasta(fasta_path: str) -> Dict[str, Dict]:
+    """
+    Parse reference FASTA file (expects exactly 2 sequences: long and short).
+
+    Returns:
+        Dictionary mapping defline to {seq, length, range_min, range_max}
     """
     references = {}
-    
-    with pysam.FastaFile(str(fasta_path)) as fasta:
-        for ref_name in fasta.references:
-            seq = fasta.fetch(ref_name)
+
+    with open(fasta_path, "r") as f:
+        current_defline = None
+        current_seq = []
+
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                # Save previous sequence
+                if current_defline is not None:
+                    seq = "".join(current_seq)
+                    seq_len = len(seq)
+                    references[current_defline] = {
+                        "seq": seq,
+                        "length": seq_len,
+                        "range_min": seq_len - LENGTH_TOLERANCE,
+                        "range_max": seq_len + LENGTH_TOLERANCE,
+                    }
+
+                # Start new sequence
+                current_defline = line[1:].split()[0]  # Take first word after >
+                current_seq = []
+            else:
+                current_seq.append(line)
+
+        # Don't forget last sequence
+        if current_defline is not None:
+            seq = "".join(current_seq)
             seq_len = len(seq)
-            # Calculate refseqrange: (Len_seq - 150, Len_seq + 150)
-            seq_range = (seq_len - 150, seq_len + 150)
-            references[ref_name] = {
-                'seq': seq,
-                'len': seq_len,
-                'range': seq_range
+            references[current_defline] = {
+                "seq": seq,
+                "length": seq_len,
+                "range_min": seq_len - LENGTH_TOLERANCE,
+                "range_max": seq_len + LENGTH_TOLERANCE,
             }
-    
-    if len(references) != 2:
-        raise ValueError(f'Expected exactly 2 reference sequences, found {len(references)}')
-    
+
     return references
 
 
-def parse_pod5_metadata(pod5_dir):
+def extract_pod5_metadata(pod5_dir: str) -> Dict[str, str]:
     """
-    Parse Pod5 files to extract end reason metadata.
-    
-    Returns dictionary: {read_id: end_reason_string}
+    Extract end reason metadata from Pod5 files.
+
+    Returns:
+        Dictionary mapping read_id to end_reason string
     """
     end_reasons = {}
-    pod5_path = Path(pod5_dir)
-    
-    if not pod5_path.exists():
-        raise FileNotFoundError(f'Pod5 directory not found: {pod5_dir}')
-    
-    # Find all .pod5 files in directory
-    pod5_files = list(pod5_path.glob('*.pod5'))
-    
+    pod5_files = glob.glob(os.path.join(pod5_dir, "*.pod5"))
+
     if not pod5_files:
-        raise FileNotFoundError(f'No .pod5 files found in {pod5_dir}')
-    
-    for pod5_file in pod5_files:
-        with p5.Reader(str(pod5_file)) as reader:
-            for read in reader.reads():
-                end_reason = read.end_reason.name if read.end_reason else 'unknown'
-                end_reasons[str(read.read_id)] = end_reason
-    
+        print(f"Warning: No .pod5 files found in {pod5_dir}", file=sys.stderr)
+        return end_reasons
+
+    for pod5_path in pod5_files:
+        try:
+            with pod5.Reader(pod5_path) as reader:
+                for read in reader.reads():
+                    read_id = str(read.read_id)
+                    end_reason = read.end_reason.name if read.end_reason else "unknown"
+                    end_reasons[read_id] = end_reason
+        except Exception as e:
+            print(f"Warning: Error reading {pod5_path}: {e}", file=sys.stderr)
+
     return end_reasons
 
 
-def calculate_q_bc(qualities):
+def calculate_q_bc(quality_scores: List[int]) -> float:
     """
-    Calculate probability-averaged basecall quality (q_bc).
-    
-    q_bc = -10 * log10(sum(10^(-Q_base/10)) / n)
+    Calculate probability-averaged basecall quality.
+
+    q_bc = -10 * log10(mean(10^(-Q_base/10)))
     """
-    if not qualities or len(qualities) == 0:
+    if not quality_scores:
         return 0.0
-    
-    # Convert quality scores to error probabilities
-    error_probs = [10 ** (-q / 10.0) for q in qualities]
-    # Calculate average error probability
-    avg_error_prob = sum(error_probs) / len(error_probs)
-    # Convert back to quality score
-    if avg_error_prob > 0:
-        q_bc = -10 * math.log10(avg_error_prob)
-    else:
-        q_bc = 60.0  # Maximum quality
-    
-    return q_bc
+
+    # Convert to error probabilities, average, then convert back
+    error_probs = [10 ** (-q / 10) for q in quality_scores]
+    mean_error = sum(error_probs) / len(error_probs)
+
+    # Avoid log(0)
+    if mean_error <= 0:
+        return 60.0  # Cap at Q60
+
+    q_bc = -10 * math.log10(mean_error)
+    return round(q_bc, 4)
 
 
-def calculate_levenshtein(read_seq, ref_seq):
+def calculate_levenshtein(read_seq: str, ref_seq: str) -> int:
     """
-    Calculate Levenshtein distance between read and reference.
+    Calculate Levenshtein distance between read and reference sequences.
     """
-    result = edlib.align(read_seq, ref_seq, task='distance')
-    return result['editDistance']
+    result = edlib.align(read_seq, ref_seq, task="distance")
+    return result["editDistance"]
 
 
-def calculate_q_ld(edit_distance, ref_len):
+def calculate_q_ld(edit_distance: int, ref_length: int) -> float:
     """
-    Calculate Levenshtein quality (q_ld).
-    
+    Calculate Levenshtein quality score.
+
     q_ld = -10 * log10(min(max(1/L^2, ed/L), 1))
     """
-    if ref_len == 0:
+    if ref_length <= 0:
         return 0.0
-    
-    # Calculate error rate
-    error_rate = edit_distance / ref_len
-    # Apply min/max bounds
-    min_error = 1.0 / (ref_len ** 2)
-    bounded_error = min(max(min_error, error_rate), 1.0)
-    # Convert to quality score
-    if bounded_error > 0:
-        q_ld = -10 * math.log10(bounded_error)
-    else:
-        q_ld = 60.0  # Maximum quality
-    
-    return q_ld
+
+    L = ref_length
+    ed_ratio = edit_distance / L
+    min_ratio = 1 / (L * L)
+
+    # max(1/L^2, ed/L)
+    inner = max(min_ratio, ed_ratio)
+    # min(..., 1)
+    clamped = min(inner, 1.0)
+
+    # Avoid log(0)
+    if clamped <= 0:
+        return 60.0
+
+    q_ld = -10 * math.log10(clamped)
+    return round(q_ld, 4)
 
 
-def match_reference(read_len, references):
+def generate_unique_id(exp_id: str, model_tier: str, model_ver: str,
+                       trim: int, mod_bitflag: int, read_id: str) -> str:
     """
-    Match read to reference based on length range.
-    
-    Returns refseq_id if match found, None otherwise.
+    Generate unique identifier for a read.
+
+    Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+    """
+    # Create short hash of read_id
+    read_hash = hashlib.md5(read_id.encode()).hexdigest()[:8]
+
+    # Clean version string (remove dots)
+    ver_clean = model_ver.replace(".", "")
+
+    return f"{exp_id}{model_tier}{ver_clean}t{trim}m{mod_bitflag}_{read_hash}"
+
+
+def match_reference(read_length: int, references: Dict[str, Dict]) -> Optional[str]:
+    """
+    Match read to reference based on length.
+
+    Returns:
+        Reference ID (defline) if match found, None otherwise
     """
     for ref_id, ref_data in references.items():
-        min_len, max_len = ref_data['range']
-        if min_len <= read_len <= max_len:
+        if ref_data["range_min"] <= read_length <= ref_data["range_max"]:
             return ref_id
     return None
 
 
-def generate_uniq_id(exp_id, model_tier, model_ver, trim, mod_flag, read_id):
+def find_bam_file(input_dir: str, exp_id: str) -> Optional[str]:
     """
-    Generate unique ID for read.
-    
-    Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+    Find the BAM file for the given experiment ID in the Input directory.
     """
-    # Create a short hash of the read_id
-    hash_obj = hashlib.md5(read_id.encode())
-    read_hash = hash_obj.hexdigest()[:8]
-    
-    # Format version without dots
-    ver_str = model_ver.replace('.', '')
-    
-    uniq_id = f'{exp_id}{model_tier}{ver_str}t{trim}m{mod_flag}_{read_hash}'
-    return uniq_id
+    bam_pattern = os.path.join(input_dir, f"{exp_id}_*.bam")
+    bam_files = glob.glob(bam_pattern)
+
+    if not bam_files:
+        return None
+
+    # Return first match (should typically be only one)
+    return bam_files[0]
 
 
-def parse_bam_filename(bam_filename):
-    """Parse metadata from BAM filename."""
-    name = bam_filename
-    if name.endswith('.bam'):
-        name = name[:-4]
-    
-    pattern = r'^(.+?)_([shf])_v([\d.]+)_([01])_(.+)$'
-    match = re.match(pattern, name)
-    
-    if not match:
-        raise ValueError(f'BAM filename does not match expected format: {bam_filename}')
-    
-    exp_id, model_tier, model_ver, trim, modifications = match.groups()
-    
-    return {
-        'exp_id': exp_id,
-        'model_tier': model_tier,
-        'model_ver': model_ver,
-        'trim': int(trim),
-        'modifications': modifications
-    }
-
-
-def get_mod_bitflag(modifications):
+def process_reads(exp_id: str, db_path: str, input_dir: str = "Input", output_dir: str = "Output"):
     """
-    Convert modification string to bitflag.
-    
-    Simple mapping for now - can be extended.
+    Main processing function that streams reads and populates the database.
     """
-    mod_map = {
-        'non': 0,
-        '6mA': 1,
-        '5mCG_5hmCG': 2,
-        '5mC_5hmC': 4,
-        '4mC_5mC': 8,
-        '5mC': 16,
-    }
-    
-    # Handle combinations (e.g., "6mA+5mC_5hmC")
-    if '+' in modifications:
-        parts = modifications.split('+')
-        bitflag = 0
-        for part in parts:
-            bitflag += mod_map.get(part, 0)
-        return bitflag
-    
-    return mod_map.get(modifications, 0)
+    # Validate paths
+    input_path = Path(input_dir)
+    if not input_path.exists():
+        print(f"Error: Input directory not found: {input_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Find BAM file
+    bam_path = find_bam_file(input_dir, exp_id)
+    if not bam_path:
+        print(f"Error: No BAM file found for experiment {exp_id} in {input_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse BAM filename for metadata
+    metadata = parse_bam_filename(bam_path)
+    if not metadata:
+        print(f"Error: Could not parse BAM filename: {bam_path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Processing experiment: {exp_id}")
+    print(f"  BAM: {bam_path}")
+    print(f"  Model: {metadata['model_tier']}_v{metadata['model_ver']}")
+    print(f"  Trim: {metadata['trim']}, Mods: {metadata['mods_str']}")
+
+    # Paths
+    ref_path = os.path.join(input_dir, f"{exp_id}.fa")
+    pod5_path = os.path.join(input_dir, f"{exp_id}_pod5")
+
+    if not os.path.exists(ref_path):
+        print(f"Error: Reference FASTA not found: {ref_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.path.isdir(pod5_path):
+        print(f"Error: Pod5 directory not found: {pod5_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse reference sequences
+    print("\nParsing reference sequences...")
+    references = parse_reference_fasta(ref_path)
+    print(f"  Found {len(references)} reference sequence(s)")
+    for ref_id, ref_data in references.items():
+        print(f"    {ref_id}: {ref_data['length']} bp (range: {ref_data['range_min']}-{ref_data['range_max']})")
+
+    # Extract Pod5 metadata
+    print("\nExtracting Pod5 metadata...")
+    end_reasons = extract_pod5_metadata(pod5_path)
+    print(f"  Found end reasons for {len(end_reasons)} reads")
+
+    # Connect to database
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Insert reference sequences into Refseq table
+    print("\nPopulating Refseq table...")
+    for ref_id, ref_data in references.items():
+        cursor.execute(
+            "INSERT OR REPLACE INTO Refseq (refseq_id, refseq, reflen) VALUES (?, ?, ?)",
+            (ref_id, ref_data["seq"], ref_data["length"])
+        )
+    conn.commit()
+
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True)
+    output_bam_path = output_path / f"{exp_id}.bam"
+
+    # Process reads
+    print("\nProcessing reads...")
+    processed = 0
+    matched = 0
+    unmatched = 0
+
+    with pysam.AlignmentFile(bam_path, "rb", check_sq=False) as in_bam:
+        with pysam.AlignmentFile(str(output_bam_path), "wb", header=in_bam.header) as out_bam:
+
+            for read in in_bam:
+                read_id = read.query_name
+                read_seq = read.query_sequence or ""
+                read_len = len(read_seq)
+                quality_scores = list(read.query_qualities) if read.query_qualities else []
+
+                # Get end reason from Pod5
+                end_reason = end_reasons.get(read_id, "unknown")
+
+                # Add ER tag to read
+                read.set_tag("ER", end_reason, value_type="Z")
+
+                # Write tagged read to output BAM
+                out_bam.write(read)
+
+                # Match to reference
+                ref_id = match_reference(read_len, references)
+
+                # Calculate metrics
+                q_bc = calculate_q_bc(quality_scores)
+
+                if ref_id:
+                    # Calculate Levenshtein distance and quality
+                    ref_seq = references[ref_id]["seq"]
+                    ref_len = references[ref_id]["length"]
+                    ed = calculate_levenshtein(read_seq, ref_seq)
+                    q_ld = calculate_q_ld(ed, ref_len)
+                    matched += 1
+                else:
+                    ed = None
+                    q_ld = None
+                    unmatched += 1
+
+                # Generate unique ID
+                uniq_id = generate_unique_id(
+                    exp_id, metadata["model_tier"], metadata["model_ver"],
+                    metadata["trim"], metadata["mod_bitflag"], read_id
+                )
+
+                # Extract additional read attributes (if available)
+                # These are typically set in the BAM tags or can be derived
+                channel = None
+                well = None
+                pore_type = None
+                num_samples = None
+                start_sample = None
+                median_before = None
+                scale = None
+                offset = None
+                forced = None
+
+                # Try to get channel from tags
+                try:
+                    channel = read.get_tag("ch") if read.has_tag("ch") else None
+                except:
+                    pass
+
+                # Insert into database
+                cursor.execute("""
+                    INSERT INTO Reads (
+                        uniq_id, exp_id, refseq_id, read_id, readseq, readlen,
+                        model_tier, model_ver, trim, mod_bitflag,
+                        ed, q_bc, q_ld, ER, forced, channel, well, pore_type,
+                        num_samples, start_sample, median_before, scale, offset
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    uniq_id, exp_id, ref_id, read_id, read_seq, read_len,
+                    metadata["model_tier"], metadata["model_ver"],
+                    metadata["trim"], metadata["mod_bitflag"],
+                    ed, q_bc, q_ld, end_reason, forced, channel, well, pore_type,
+                    num_samples, start_sample, median_before, scale, offset
+                ))
+
+                processed += 1
+                if processed % 10000 == 0:
+                    print(f"  Processed {processed} reads...")
+                    conn.commit()
+
+    # Final commit
+    conn.commit()
+    conn.close()
+
+    print(f"\nProcessing complete!")
+    print(f"  Total reads: {processed}")
+    print(f"  Matched to reference: {matched}")
+    print(f"  Unmatched (length out of range): {unmatched}")
+    print(f"  Output BAM: {output_bam_path}")
 
 
 def main():
-    """Main entry point for ingestion."""
     parser = argparse.ArgumentParser(
-        description='Process reads and populate ONT-SMA-seq database'
+        description="Process ONT-SMA-seq data and populate database",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    python ingest.py EXP001
+    python ingest.py EXP001 --db custom_path.db
+    python ingest.py EXP001 --input-dir /data/Input --output-dir /data/Output
+        """
     )
     parser.add_argument(
-        'exp_id',
+        "exp_id",
         type=str,
-        help='Experiment ID'
+        help="Experiment identifier"
     )
     parser.add_argument(
-        '--input-dir',
+        "--db",
         type=str,
-        default='Input',
-        help='Input directory with standardized files (default: Input)'
+        default=None,
+        help="Path to SQLite database (default: SMA_{exp_id}.db)"
     )
     parser.add_argument(
-        '--output-dir',
+        "--input-dir",
         type=str,
-        default='Output',
-        help='Output directory for tagged BAM (default: Output)'
+        default="Input",
+        help="Input directory containing standardized files (default: Input)"
     )
     parser.add_argument(
-        '--db-dir',
+        "--output-dir",
         type=str,
-        default='.',
-        help='Directory containing database file (default: current directory)'
+        default="Output",
+        help="Output directory for processed BAM (default: Output)"
     )
-    
+
     args = parser.parse_args()
-    
-    exp_id = args.exp_id
-    input_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
-    db_path = Path(args.db_dir) / f'SMA_{exp_id}.db'
-    
-    # Check database exists
-    if not db_path.exists():
-        print(f'Error: Database not found: {db_path}', file=sys.stderr)
-        print('Run mkdb.py first to create the database', file=sys.stderr)
-        return 1
-    
-    try:
-        # Find input BAM file
-        bam_files = list(input_dir.glob(f'{exp_id}_*.bam'))
-        if not bam_files:
-            raise FileNotFoundError(f'No BAM file found for experiment {exp_id} in {input_dir}')
-        bam_path = bam_files[0]
-        
-        # Parse metadata from BAM filename
-        metadata = parse_bam_filename(bam_path.name)
-        model_tier = metadata['model_tier']
-        model_ver = metadata['model_ver']
-        trim = metadata['trim']
-        mod_bitflag = get_mod_bitflag(metadata['modifications'])
-        
-        print(f'Processing experiment: {exp_id}')
-        print(f'Input BAM: {bam_path}')
-        print(f'Model: {model_tier} v{model_ver}, Trim: {trim}, Modifications: {mod_bitflag}')
-        
-        # Parse reference FASTA
-        ref_path = input_dir / f'{exp_id}.fa'
-        if not ref_path.exists():
-            raise FileNotFoundError(f'Reference FASTA not found: {ref_path}')
-        
-        print(f'Parsing reference: {ref_path}')
-        references = parse_reference_fasta(ref_path)
-        print(f'Found {len(references)} reference sequences')
-        
-        # Connect to database
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        
-        # Insert reference sequences into database
-        for ref_id, ref_data in references.items():
-            cursor.execute(
-                'INSERT OR IGNORE INTO Refseq (refseq_id, refseq, reflen) VALUES (?, ?, ?)',
-                (ref_id, ref_data['seq'], ref_data['len'])
-            )
-        conn.commit()
-        print('Inserted reference sequences into database')
-        
-        # Parse Pod5 metadata
-        pod5_dir = input_dir / f'{exp_id}_pod5'
-        print(f'Parsing Pod5 metadata from: {pod5_dir}')
-        end_reasons = parse_pod5_metadata(pod5_dir)
-        print(f'Loaded end reasons for {len(end_reasons)} reads')
-        
-        # Create output directory
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_bam_path = output_dir / f'{exp_id}.bam'
-        
-        # Process reads
-        print(f'Processing reads...')
-        reads_processed = 0
-        reads_matched = 0
-        
-        with pysam.AlignmentFile(str(bam_path), 'rb', check_sq=False) as inbam:
-            with pysam.AlignmentFile(str(output_bam_path), 'wb', header=inbam.header) as outbam:
-                for read in inbam:
-                    read_id = read.query_name
-                    read_seq = read.query_sequence
-                    read_len = len(read_seq) if read_seq else 0
-                    
-                    if not read_seq:
-                        continue  # Skip reads without sequence
-                    
-                    # Get end reason from Pod5 data
-                    end_reason = end_reasons.get(read_id, 'unknown')
-                    
-                    # Add ER tag to read
-                    read.set_tag('ER', end_reason, value_type='Z')
-                    
-                    # Write tagged read to output BAM
-                    outbam.write(read)
-                    
-                    # Match to reference
-                    refseq_id = match_reference(read_len, references)
-                    
-                    # Calculate quality metrics
-                    qualities = read.query_qualities
-                    if qualities is not None:
-                        q_bc = calculate_q_bc(qualities)
-                    else:
-                        q_bc = 0.0
-                    
-                    # Calculate Levenshtein metrics if reference matched
-                    ed = None
-                    q_ld = None
-                    if refseq_id:
-                        ref_data = references[refseq_id]
-                        ed = calculate_levenshtein(read_seq, ref_data['seq'])
-                        q_ld = calculate_q_ld(ed, ref_data['len'])
-                        reads_matched += 1
-                    
-                    # Generate unique ID
-                    uniq_id = generate_uniq_id(exp_id, model_tier, model_ver, trim, mod_bitflag, read_id)
-                    
-                    # Extract additional metadata from read tags
-                    forced = read.get_tag('pt') if read.has_tag('pt') else None
-                    channel = read.get_tag('ch') if read.has_tag('ch') else None
-                    well = read.get_tag('ws') if read.has_tag('ws') else None
-                    pore_type = read.get_tag('rn') if read.has_tag('rn') else None
-                    num_samples = read.get_tag('ns') if read.has_tag('ns') else None
-                    start_sample = read.get_tag('ts') if read.has_tag('ts') else None
-                    median_before = read.get_tag('sm') if read.has_tag('sm') else None
-                    scale = read.get_tag('sd') if read.has_tag('sd') else None
-                    offset = read.get_tag('sv') if read.has_tag('sv') else None
-                    
-                    # Insert into database
-                    cursor.execute('''
-                        INSERT INTO Reads (
-                            uniq_id, exp_id, refseq_id, read_id, readseq, readlen,
-                            model_tier, model_ver, trim, mod_bitflag,
-                            ed, q_bc, q_ld, ER,
-                            forced, channel, well, pore_type,
-                            num_samples, start_sample, median_before, scale, offset
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        uniq_id, exp_id, refseq_id, read_id, read_seq, read_len,
-                        model_tier, model_ver, trim, mod_bitflag,
-                        ed, q_bc, q_ld, end_reason,
-                        forced, channel, well, pore_type,
-                        num_samples, start_sample, median_before, scale, offset
-                    ))
-                    
-                    reads_processed += 1
-                    if reads_processed % 1000 == 0:
-                        conn.commit()
-                        print(f'Processed {reads_processed} reads...')
-        
-        # Final commit
-        conn.commit()
-        conn.close()
-        
-        print(f'\nProcessing complete!')
-        print(f'Total reads processed: {reads_processed}')
-        print(f'Reads matched to reference: {reads_matched}')
-        print(f'Output BAM: {output_bam_path}')
-        print(f'Database updated: {db_path}')
-        
-        return 0
-        
-    except FileNotFoundError as e:
-        print(f'File not found: {e}', file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
+
+    # Determine database path
+    db_path = args.db or f"SMA_{args.exp_id}.db"
+
+    if not os.path.exists(db_path):
+        print(f"Error: Database not found: {db_path}", file=sys.stderr)
+        print(f"Please run: python mkdb.py {args.exp_id}", file=sys.stderr)
+        sys.exit(1)
+
+    # Run processing
+    process_reads(args.exp_id, db_path, args.input_dir, args.output_dir)
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+if __name__ == "__main__":
+    main()

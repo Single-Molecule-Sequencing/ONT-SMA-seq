@@ -1,48 +1,82 @@
 #!/usr/bin/env python3
 """
-Database Initialization Script for ONT-SMA-seq Pipeline
+mkdb.py - Database Initialization Script
 
-Creates SQLite database schema and populates static lookup tables.
+Creates the SQLite database schema and populates static lookup tables
+for the ONT-SMA-seq pipeline.
+
+Usage:
+    python mkdb.py <exp_id>
+
+Output:
+    SMA_{exp_id}.db
 """
 
 import argparse
 import sqlite3
+import os
 import sys
-from pathlib import Path
 
 
-def create_tables(conn):
-    """Create database schema tables."""
+# Modification bitflag definitions
+MODIFICATIONS = [
+    (0, "non"),           # No modifications
+    (1, "6mA"),           # Independent
+    (2, "5mCG_5hmCG"),    # Mutually exclusive C-Mod
+    (4, "5mC_5hmC"),      # Mutually exclusive C-Mod
+    (8, "4mC_5mC"),       # Mutually exclusive C-Mod
+    (16, "5mC"),          # Mutually exclusive C-Mod
+]
+
+
+def create_database(exp_id: str) -> str:
+    """
+    Create the SQLite database with the required schema.
+
+    Args:
+        exp_id: Experiment identifier
+
+    Returns:
+        Path to the created database file
+    """
+    db_path = f"SMA_{exp_id}.db"
+
+    # Check if database already exists
+    if os.path.exists(db_path):
+        print(f"Warning: Database {db_path} already exists. It will be overwritten.")
+        os.remove(db_path)
+
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    # Create Exp table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Exp (
+
+    # Create Mods table (lookup table for modification bitflags)
+    cursor.execute("""
+        CREATE TABLE Mods (
+            mod_bitflag INTEGER PRIMARY KEY,
+            mods TEXT NOT NULL
+        )
+    """)
+
+    # Create Exp table (experiment metadata)
+    cursor.execute("""
+        CREATE TABLE Exp (
             exp_id TEXT PRIMARY KEY,
             exp_desc TEXT
         )
-    ''')
-    
-    # Create Refseq table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Refseq (
+    """)
+
+    # Create Refseq table (reference sequences)
+    cursor.execute("""
+        CREATE TABLE Refseq (
             refseq_id TEXT PRIMARY KEY,
             refseq TEXT NOT NULL,
             reflen INTEGER NOT NULL
         )
-    ''')
-    
-    # Create Mods table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Mods (
-            mod_bitflag INTEGER PRIMARY KEY,
-            mods TEXT NOT NULL
-        )
-    ''')
-    
-    # Create Reads table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Reads (
+    """)
+
+    # Create Reads table (primary data table)
+    cursor.execute("""
+        CREATE TABLE Reads (
             uniq_id TEXT PRIMARY KEY,
             exp_id TEXT,
             refseq_id TEXT,
@@ -52,9 +86,9 @@ def create_tables(conn):
             model_tier TEXT NOT NULL,
             model_ver TEXT NOT NULL,
             trim INTEGER NOT NULL,
-            mod_bitflag INTEGER,
+            mod_bitflag INTEGER NOT NULL,
             ed INTEGER,
-            q_bc REAL NOT NULL,
+            q_bc REAL,
             q_ld REAL,
             ER TEXT,
             forced INTEGER,
@@ -70,93 +104,75 @@ def create_tables(conn):
             FOREIGN KEY (refseq_id) REFERENCES Refseq(refseq_id),
             FOREIGN KEY (mod_bitflag) REFERENCES Mods(mod_bitflag)
         )
-    ''')
-    
-    conn.commit()
+    """)
 
+    # Create indices for common queries
+    cursor.execute("CREATE INDEX idx_reads_exp_id ON Reads(exp_id)")
+    cursor.execute("CREATE INDEX idx_reads_refseq_id ON Reads(refseq_id)")
+    cursor.execute("CREATE INDEX idx_reads_read_id ON Reads(read_id)")
 
-def populate_mods_table(conn):
-    """Populate the Mods table with standard modification bitflags."""
-    cursor = conn.cursor()
-    
-    # Modification bitflags as specified in the documentation
-    # Note: 6mA (1) can coexist with C-mods, but C-mods (2,4,8,16) are mutually exclusive
-    # Only including valid/common combinations
-    modifications = [
-        (0, 'non'),
-        (1, '6mA'),
-        (2, '5mCG_5hmCG'),
-        (3, '6mA+5mCG_5hmCG'),
-        (4, '5mC_5hmC'),
-        (5, '6mA+5mC_5hmC'),
-        (8, '4mC_5mC'),
-        (9, '6mA+4mC_5mC'),
-        (16, '5mC'),
-        (17, '6mA+5mC'),
-    ]
-    
+    # Populate Mods table with standard bitflag definitions
     cursor.executemany(
-        'INSERT OR IGNORE INTO Mods (mod_bitflag, mods) VALUES (?, ?)',
-        modifications
+        "INSERT INTO Mods (mod_bitflag, mods) VALUES (?, ?)",
+        MODIFICATIONS
     )
-    
+
+    # Also insert common combinations
+    # 6mA can coexist with any C-mod
+    combinations = [
+        (1 + 2, "6mA+5mCG_5hmCG"),
+        (1 + 4, "6mA+5mC_5hmC"),
+        (1 + 8, "6mA+4mC_5mC"),
+        (1 + 16, "6mA+5mC"),
+    ]
+    cursor.executemany(
+        "INSERT INTO Mods (mod_bitflag, mods) VALUES (?, ?)",
+        combinations
+    )
+
     conn.commit()
+    conn.close()
+
+    return db_path
 
 
 def main():
-    """Main entry point for database initialization."""
     parser = argparse.ArgumentParser(
-        description='Initialize SQLite database for ONT-SMA-seq pipeline'
+        description="Initialize SQLite database for ONT-SMA-seq pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    python mkdb.py EXP001
+    python mkdb.py my_experiment_2024
+        """
     )
     parser.add_argument(
-        'exp_id',
+        "exp_id",
         type=str,
-        help='Experiment ID for database naming'
+        help="Experiment identifier (used to name the database file)"
     )
-    parser.add_argument(
-        '--output-dir',
-        type=str,
-        default='.',
-        help='Output directory for database file (default: current directory)'
-    )
-    
+
     args = parser.parse_args()
-    
-    # Create output directory if it doesn't exist
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Database file path
-    db_path = output_dir / f'SMA_{args.exp_id}.db'
-    
-    # Check if database already exists
-    if db_path.exists():
-        print(f'Warning: Database {db_path} already exists. Overwriting...', file=sys.stderr)
-        db_path.unlink()
-    
-    # Create database connection
-    try:
-        conn = sqlite3.connect(str(db_path))
-        
-        # Create tables
-        create_tables(conn)
-        print(f'Created database schema in {db_path}')
-        
-        # Populate static lookup tables
-        populate_mods_table(conn)
-        print('Populated Mods table with modification bitflags')
-        
-        conn.close()
-        print(f'Successfully initialized database: {db_path}')
-        return 0
-        
-    except sqlite3.Error as e:
-        print(f'Database error: {e}', file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
-        return 1
+
+    # Validate exp_id (basic sanity check)
+    if not args.exp_id or args.exp_id.isspace():
+        print("Error: exp_id cannot be empty or whitespace", file=sys.stderr)
+        sys.exit(1)
+
+    # Create the database
+    db_path = create_database(args.exp_id)
+    print(f"Database created: {db_path}")
+
+    # Print summary
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM Mods")
+    mod_count = cursor.fetchone()[0]
+    conn.close()
+
+    print(f"  - Tables created: Reads, Mods, Exp, Refseq")
+    print(f"  - Mods table populated with {mod_count} modification definitions")
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+if __name__ == "__main__":
+    main()

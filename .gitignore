@@ -18,6 +18,12 @@ reports/
 intermediate/
 plots/
 
+# Pipeline runtime directories
+Input/
+Output/
+test_data/
+*.db
+
 # Development dirs
 dev/
 backup/
@@ -65,14 +71,6 @@ __pycache__/
 .venv/
 *.conda
 .envrc
-
-# Test artifacts
-.pytest_cache/
-.coverage
-htmlcov/
-*.db
-Input/
-Output/
 
 # OS
 .DS_Store
