@@ -1,130 +1,206 @@
-# Copilot Instructions for ONT-SMA-seq
+# ONT-SMA-seq Copilot Instructions
 
-## Project Overview
+## About This Project
 
-ONT-SMA-seq is a Python-based bioinformatics pipeline for analyzing Oxford Nanopore Technology (ONT) sequencing data using the SMA-seq protocol. The pipeline processes nanopore sequencing reads, calculates quality metrics, and stores results in a SQLite database.
+ONT-SMA-seq is a bioinformatics pipeline for analyzing Oxford Nanopore Technology (ONT) sequencing data. This repository implements a three-stage Python pipeline that processes nanopore reads, calculates quality metrics, and stores results in a SQLite database.
 
-## Architecture
+## Development Guidelines
 
-The project consists of three main Python scripts with distinct responsibilities:
+### Technology Choices
+- **Language**: Python 3.x exclusively
+- **Database**: SQLite3 for all data storage
+- **Required Libraries**: 
+  - `pysam` for BAM file operations
+  - `pod5` for extracting End Reason metadata
+  - `edlib` for Levenshtein distance calculations
+  - `argparse` for CLI argument parsing
 
-1. **`mkdb.py`** - Database initialization
-   - Creates SQLite database schema
-   - Populates static lookup tables (Mods, Exp, Refseq)
-   - Output: `SMA_{exp_id}.db`
+### Pipeline Architecture
 
-2. **`inputInit.py`** - Input standardization
-   - Parses BAM filename metadata
-   - Creates symlinks for standardized input paths
-   - Input structure: `{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam`
+The system consists of three independent Python scripts:
 
-3. **`ingest.py`** - Main processing pipeline
-   - Parses reference FASTA and Pod5 metadata
-   - Tags BAM files with end reason (ER)
-   - Calculates quality metrics (q_bc, q_ld)
-   - Computes Levenshtein distance for matched reads
-   - Populates the Reads table
+#### 1. mkdb.py - Database Initialization
+Creates the SQLite schema and populates static reference tables.
+- Input: Experiment ID (exp_id)
+- Output: `SMA_{exp_id}.db` file
+- Creates tables: Reads, Mods, Exp, Refseq
+- Pre-populates Mods table with modification bitflag mappings
 
-## Technology Stack
+#### 2. inputInit.py - Input Standardization  
+Parses metadata from filenames and creates standardized symlinks.
+- Parses BAM filename: `{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam`
+- Creates `Input/` directory structure
+- Symlinks: BAM file, Pod5 directory, Reference FASTA
 
-- **Language**: Python 3.x
-- **Key Libraries**:
-  - `pysam` - BAM file I/O
-  - `pod5` - End Reason extraction from Pod5 files
-  - `edlib` - Levenshtein distance calculation
-  - `sqlite3` - Database operations
-  - `argparse` - Command-line argument parsing
+#### 3. ingest.py - Read Processing & Database Population
+Main pipeline that processes reads and populates the database.
+- Parses reference FASTA (exactly 2 sequences: long and short)
+- Builds Pod5 lookup dictionary for End Reason values
+- Streams BAM reads with calculated metrics into database
+- Tags output BAM with `ER:Z:<end_reason>` SAM tag
 
-## Database Schema
+## Critical Implementation Details
 
-The SQLite database contains four main tables:
-
-### Reads Table
-Primary storage for sequencing read data and metrics. Key columns:
-- `uniq_id` (TEXT PK): Composite identifier in format `{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}`
-- `refseq_id` (TEXT FK): Reference sequence ID, NULL if length out of range
-- `ed` (INT): Levenshtein distance, NULL if no RefSeq match
-- `q_bc` (REAL): Probability-averaged basecall quality
-- `q_ld` (REAL): Levenshtein quality, NULL if no RefSeq match
-
-### Mods Table
-Static lookup table for modification bitflags:
-- `mod_bitflag` (INT PK): Sum of modification flags (2^n)
-- `mods` (TEXT): Modification names
-
-### Exp Table
-Experiment metadata storage
-
-### Refseq Table
-Reference sequence information populated during ingestion
-
-## File Naming Conventions
-
-### BAM Files
-Format: `{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam`
-- `exp_id`: Experiment identifier
-- `bc_model_type`: Basecall model tier (s/h/f for standard/high/fast)
-- `bc_model_version`: Version number (e.g., 5.2.0)
-- `trim`: Binary flag (0/1)
-- `modifications`: Modification bitflag value
-
-### Modification Bitflags
-Modifications are encoded as integer sums of powers of 2:
-- `non` = 0 (no modifications)
-- `6mA` = 1 (can coexist with others)
-- `5mCG_5hmCG` = 2 (mutually exclusive C-mod)
-- `5mC_5hmC` = 4 (mutually exclusive C-mod)
-- `4mC_5mC` = 8 (mutually exclusive C-mod)
-- `5mC` = 16 (mutually exclusive C-mod)
-
-Example: `5mC_5hmC` + `6mA` = 4 + 1 = 5
-
-## Quality Metrics
-
-### Basecall Quality (q_bc)
-Probability-averaged quality score:
+### File Naming Convention
+BAM files must follow this exact format:
 ```
-q_bc = -10 * log10(sum(10^(-Q_base/10)) / n)
+{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam
+```
+- `bc_model_type`: Single letter - 's' (standard), 'h' (high), or 'f' (fast)
+- `bc_model_version`: Semantic version (e.g., "5.2.0")
+- `trim`: Binary - 0 or 1
+- `modifications`: Integer bitflag value
+
+### Modification Bitflag Encoding
+Modifications use power-of-2 encoding (can sum for combinations):
+```
+non          = 0   (no modifications)
+6mA          = 1   (independent, can combine with C-mods)
+5mCG_5hmCG   = 2   (mutually exclusive C-mod)
+5mC_5hmC     = 4   (mutually exclusive C-mod)
+4mC_5mC      = 8   (mutually exclusive C-mod)
+5mC          = 16  (mutually exclusive C-mod)
+```
+Example: `5mC_5hmC` (4) + `6mA` (1) = 5
+
+### Database Schema
+
+#### Reads Table
+Primary data storage. Key columns:
+```
+uniq_id       TEXT PRIMARY KEY   Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+refseq_id     TEXT FOREIGN KEY   NULL if read length outside reference range
+ed            INT                Levenshtein distance (NULL if refseq_id is NULL)
+q_bc          REAL               Probability-averaged basecall quality
+q_ld          REAL               Levenshtein quality (NULL if refseq_id is NULL)
+ER            TEXT               End Reason from Pod5
 ```
 
-### Levenshtein Quality (q_ld)
-Calculated only when read matches a reference sequence:
+#### Mods Table (Static Reference)
 ```
-q_ld = -10 * log10(min(max(1/L^2, ed/L), 1))
+mod_bitflag   INT PRIMARY KEY    Sum of modification flags
+mods          TEXT               Comma-separated modification names
 ```
-where L is the length of the matched RefSeq and ed is the Levenshtein distance.
 
-## Coding Conventions
+#### Exp Table
+```
+exp_id        TEXT PRIMARY KEY   Experiment identifier
+exp_desc      TEXT               Description
+```
 
-1. **NULL Handling**: Use `None` (Python NULL) for:
-   - `refseq_id` when read length is outside reference range
-   - `ed` and `q_ld` when no RefSeq match exists
+#### Refseq Table (Populated by ingest.py)
+```
+refseq_id     TEXT PRIMARY KEY   Sequence defline
+refseq        TEXT               Full sequence
+reflen        INT                Sequence length
+```
 
-2. **RefSeq Matching**: Compare read length against `refseqrange` (Len_seq - 150, Len_seq + 150)
+### Quality Metric Formulas
 
-3. **BAM Tagging**: Add SAM-compliant tag `ER:Z:<end_reason>` to output BAM files
+**Basecall Quality (q_bc)** - Always calculated:
+```python
+q_bc = -10 * log10(sum(10**(-Q_base/10)) / n)
+```
 
-4. **File Organization**:
-   - Input files: `Input/` directory with symlinks
-   - Output files: `Output/{exp_id}/` directory
-   - Database: Root directory as `SMA_{exp_id}.db`
+**Levenshtein Quality (q_ld)** - Only when refseq_id is matched:
+```python
+q_ld = -10 * log10(min(max(1/L**2, ed/L), 1))
+```
+where `L` = matched RefSeq length, `ed` = Levenshtein distance
 
-5. **Database Operations**: Always commit transactions and close file handles properly
+### RefSeq Matching Logic
 
-## Testing and Validation
+Reference sequences have a tolerance range:
+```
+refseqrange = (Len_seq - 150, Len_seq + 150)
+```
 
-When making changes:
-1. Ensure database schema integrity is maintained
-2. Validate filename parsing against the naming convention
-3. Verify NULL handling for reads outside RefSeq ranges
-4. Check quality metric calculations match formulas
-5. Ensure BAM file tagging follows SAM specification
+When processing reads:
+- If `read_length` within ANY refseqrange → assign that refseq_id, calculate ed and q_ld
+- If `read_length` outside ALL ranges → set refseq_id = NULL, ed = NULL, q_ld = NULL
 
-## Best Practices
+**Important**: Reads with NULL refseq_id are still inserted into the database.
 
-- Use context managers (`with` statements) for file operations
-- Validate input file formats before processing
-- Handle edge cases: reads outside RefSeq range, missing Pod5 data
-- Maintain transaction atomicity for database operations
-- Use appropriate data types matching the schema (TEXT, INT, REAL)
-- Follow Python PEP 8 style guidelines
+## Coding Standards
+
+### NULL Handling
+Use Python `None` for SQL NULL values:
+- `refseq_id = None` when read length doesn't match any reference
+- `ed = None` and `q_ld = None` when refseq_id is None
+
+### File Organization
+```
+Input/
+  {exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam
+  {exp_id}_pod5/
+  {exp_id}.fa
+
+Output/
+  {exp_id}/
+    (output BAM files)
+
+SMA_{exp_id}.db
+```
+
+### BAM Processing
+- Always use context managers (`with pysam.AlignmentFile(...)`)
+- Add SAM tag `ER:Z:<end_reason>` to every output read
+- Output BAM goes to `Output/{exp_id}.bam`
+
+### Database Operations
+- Use parameterized queries (no string interpolation)
+- Commit transactions explicitly
+- Close all database connections in finally blocks
+- Match data types: TEXT for strings, INT for integers, REAL for floats
+
+### Python Style
+- Follow PEP 8
+- Use type hints where beneficial
+- Validate inputs before processing
+- Handle missing Pod5 data gracefully
+- Log progress for long-running operations
+
+## Common Patterns
+
+### Parsing BAM Filename
+```python
+# Extract from: exp123_h_v5.2.0_1_5.bam
+parts = filename.replace('.bam', '').split('_')
+exp_id = parts[0]
+bc_model_type = parts[1]  # 's', 'h', or 'f'
+bc_model_version = parts[2].replace('v', '')
+trim = int(parts[3])
+mod_bitflag = int(parts[4])
+```
+
+### Constructing uniq_id
+```python
+# Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
+# Example: exp123h5.2.0t1m5_abc123
+import hashlib
+read_hash = hashlib.md5(read_id.encode()).hexdigest()[:8]
+uniq_id = f"{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}"
+```
+
+### Pod5 End Reason Lookup
+```python
+import pod5
+# Build lookup dictionary
+end_reasons = {}
+for pod5_file in pod5_directory:
+    with pod5.Reader(pod5_file) as reader:
+        for read in reader:
+            end_reasons[read.read_id] = read.end_reason
+```
+
+## Testing Checklist
+
+When implementing or modifying code:
+- [ ] Filename parsing handles all valid format variations
+- [ ] Database schema matches specification exactly
+- [ ] NULL values inserted correctly for unmatched reads
+- [ ] RefSeq range calculation: (length - 150, length + 150)
+- [ ] Quality metrics use correct formulas
+- [ ] BAM output includes ER tag
+- [ ] All file handles and DB connections closed properly
+- [ ] Edge cases handled: missing Pod5 data, reads outside all ranges
