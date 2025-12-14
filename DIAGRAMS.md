@@ -109,9 +109,9 @@ erDiagram
         INTEGER reflen
     }
     
-    Reads }|--|| Exp : "exp_id"
-    Refseq ||--o{ Reads : "refseq_id"
-    Reads }|--|| Mods : "mod_bitflag"
+    Exp ||--o{ Reads : "exp_id"
+    Reads }o--|| Refseq : "refseq_id"
+    Mods ||--o{ Reads : "mod_bitflag"
 ```
 
 ## Read Processing Flow
