@@ -25,13 +25,13 @@ graph TB
     A2 --> C1
     B2 --> C1
     
-    style A1 fill:#e1f5ff
-    style B1 fill:#e1f5ff
-    style C1 fill:#e1f5ff
-    style A2 fill:#ffe8cc
-    style B2 fill:#ffe8cc
-    style C3 fill:#d4edda
-    style C4 fill:#d4edda
+    style A1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style B1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style C1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style A2 fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
+    style B2 fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
+    style C3 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style C4 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
 ```
 
 ## Input/Output Summary
@@ -67,9 +67,9 @@ flowchart LR
     P3 --> O1
     P3 --> O2
     
-    style Inputs fill:#fff4e6
-    style Pipeline fill:#e7f5ff
-    style Outputs fill:#d3f9d8
+    style Inputs fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
+    style Pipeline fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Outputs fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
 ```
 
 ## Data Structure: Database Schema
@@ -140,9 +140,9 @@ flowchart TD
     Next -->|Yes| Start
     Next -->|No| Done([Complete])
     
-    style Start fill:#e7f5ff
-    style Done fill:#d3f9d8
-    style InsertDB fill:#ffe8cc
+    style Start fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Done fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style InsertDB fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
 ```
 
 ## Data Transformations
@@ -223,16 +223,16 @@ graph LR
     M1 --> C4
     M5 --> C4
     
-    style M0 fill:#f0f0f0
-    style M1 fill:#e1f5ff
-    style M2 fill:#fff3cd
-    style M3 fill:#fff3cd
-    style M4 fill:#fff3cd
-    style M5 fill:#fff3cd
-    style C1 fill:#d4edda
-    style C2 fill:#d4edda
-    style C3 fill:#d4edda
-    style C4 fill:#d4edda
+    style M0 fill:#6c757d,stroke:#495057,stroke-width:2px,color:#fff
+    style M1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style M2 fill:#ffc107,stroke:#d39e00,stroke-width:2px,color:#000
+    style M3 fill:#ffc107,stroke:#d39e00,stroke-width:2px,color:#000
+    style M4 fill:#ffc107,stroke:#d39e00,stroke-width:2px,color:#000
+    style M5 fill:#ffc107,stroke:#d39e00,stroke-width:2px,color:#000
+    style C1 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style C2 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style C3 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style C4 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
 ```
 
 ## Directory Structure Before/After
@@ -263,8 +263,8 @@ graph TB
         A1 --> A6
     end
     
-    style A2 fill:#ffe8cc
-    style A6 fill:#d4edda
+    style A2 fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
+    style A6 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
 ```
 
 ## Metric Calculations
@@ -333,9 +333,9 @@ flowchart TD
     Calc --> DB[(Store in Database)]
     Skip --> DB
     
-    style Start fill:#e7f5ff
-    style Match1 fill:#d4edda
-    style Match2 fill:#d4edda
-    style NoMatch fill:#f8d7da
-    style DB fill:#ffe8cc
+    style Start fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Match1 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style Match2 fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
+    style NoMatch fill:#dc3545,stroke:#bd2130,stroke-width:2px,color:#fff
+    style DB fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
 ```

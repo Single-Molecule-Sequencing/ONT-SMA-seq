@@ -71,11 +71,11 @@ flowchart TD
     FinalCommit --> CloseFiles[Close BAM Files<br/>Close Database]
     CloseFiles --> Complete([Pipeline Complete])
     
-    style Step1 fill:#e1f5ff,stroke:#0077b6,stroke-width:2px
-    style Step2 fill:#e1f5ff,stroke:#0077b6,stroke-width:2px
-    style Step3 fill:#e1f5ff,stroke:#0077b6,stroke-width:2px
-    style Complete fill:#90ee90,stroke:#006400,stroke-width:3px
-    style Start fill:#ffffcc,stroke:#cc9900,stroke-width:2px
+    style Step1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Step2 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Step3 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Complete fill:#28a745,stroke:#1e7e34,stroke-width:3px,color:#fff
+    style Start fill:#ffc107,stroke:#d39e00,stroke-width:2px,color:#000
 ```
 
 ---
@@ -227,11 +227,11 @@ flowchart LR
     Script3 --> OUTBAM
     Script3 --> OUTDB
     
-    style Inputs fill:#fff4e6,stroke:#fd7e14,stroke-width:2px
-    style Script1 fill:#e7f5ff,stroke:#0077b6,stroke-width:2px
-    style Script2 fill:#e7f5ff,stroke:#0077b6,stroke-width:2px
-    style Script3 fill:#e7f5ff,stroke:#0077b6,stroke-width:2px
-    style FinalOutputs fill:#d3f9d8,stroke:#2b8a3e,stroke-width:2px
+    style Inputs fill:#fd7e14,stroke:#dc6308,stroke-width:2px,color:#fff
+    style Script1 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Script2 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style Script3 fill:#0077b6,stroke:#004080,stroke-width:2px,color:#fff
+    style FinalOutputs fill:#28a745,stroke:#1e7e34,stroke-width:2px,color:#fff
 ```
 
 ---
