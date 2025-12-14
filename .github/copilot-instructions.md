@@ -187,9 +187,10 @@ uniq_id = f"{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}"
 ### Pod5 End Reason Lookup
 ```python
 import pod5
+from pathlib import Path
 # Build lookup dictionary
 end_reasons = {}
-for pod5_file in pod5_directory:
+for pod5_file in Path(pod5_directory).glob('*.pod5'):
     with pod5.Reader(pod5_file) as reader:
         for read in reader:
             end_reasons[read.read_id] = read.end_reason
