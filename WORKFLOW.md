@@ -128,9 +128,9 @@ erDiagram
         INTEGER reflen "Reference sequence length"
     }
     
-    Reads ||--o{ Exp : "belongs to"
+    Reads }|--|| Exp : "belongs to"
     Reads }o--|| Refseq : "matches to"
-    Reads }o--|| Mods : "has modifications"
+    Reads }|--|| Mods : "has modifications"
 ```
 
 ### Modification Bitflags
