@@ -99,12 +99,14 @@ reflen        INT                Sequence length
 
 **Basecall Quality (q_bc)** - Always calculated:
 ```python
-q_bc = -10 * log10(sum(10**(-Q_base/10)) / n)
+import math
+q_bc = -10 * math.log10(sum(10**(-Q_base/10)) / n)
 ```
 
 **Levenshtein Quality (q_ld)** - Only when refseq_id is matched:
 ```python
-q_ld = -10 * log10(min(max(1/L**2, ed/L), 1))
+import math
+q_ld = -10 * math.log10(min(max(1/L**2, ed/L), 1))
 ```
 where `L` = matched RefSeq length, `ed` = Levenshtein distance
 
@@ -178,7 +180,7 @@ mod_bitflag = int(parts[4])
 # Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}
 # Example: exp123h5.2.0t1m5_abc123
 import hashlib
-read_hash = hashlib.md5(read_id.encode()).hexdigest()[:8]
+read_hash = hashlib.sha256(read_id.encode()).hexdigest()[:8]
 uniq_id = f"{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}"
 ```
 
