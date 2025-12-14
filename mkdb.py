@@ -80,6 +80,8 @@ def populate_mods_table(conn):
     cursor = conn.cursor()
     
     # Modification bitflags as specified in the documentation
+    # Note: 6mA (1) can coexist with C-mods, but C-mods (2,4,8,16) are mutually exclusive
+    # Only including valid/common combinations
     modifications = [
         (0, 'non'),
         (1, '6mA'),
