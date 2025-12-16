@@ -20,6 +20,7 @@ plots/
 
 # Development dirs
 dev/
+data/
 backup/
 
 # Large raw sequencing data
