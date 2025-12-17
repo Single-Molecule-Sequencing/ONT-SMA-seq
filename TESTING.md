@@ -45,9 +45,9 @@ This will:
 The test creates:
 - **Reference FASTA**: 2 sequences (short ~200bp, long ~500bp)
 - **Input BAM**: 20 synthetic reads
-  - ~8 reads matching short reference (±50bp)
+  - ~7 reads matching short reference (±50bp)
   - ~7 reads matching long reference (±50bp)
-  - ~5 reads outside both ranges (unmatched)
+  - ~6 reads outside both ranges (unmatched)
 - **Pod5 directory**: Empty (end reasons will be 'unknown')
 
 ## Manual Testing
