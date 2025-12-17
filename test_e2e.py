@@ -30,13 +30,6 @@ except ImportError:
     print("Error: pysam is required. Install with: pip install pysam", file=sys.stderr)
     sys.exit(1)
 
-try:
-    import pod5
-except ImportError:
-    print("Error: pod5 is required. Install with: pip install pod5", file=sys.stderr)
-    sys.exit(1)
-
-
 # Test configuration
 EXP_ID = "TEST001"
 MODEL_TIER = "h"
