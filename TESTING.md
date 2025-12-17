@@ -4,150 +4,132 @@ This document describes how to test the ONT-SMA-seq pipeline.
 
 ## Quick Test
 
-Run the comprehensive test suite:
+Run the automated end-to-end test:
 
 ```bash
-python test_pipeline.py
+python test_e2e.py
 ```
 
 This will:
-1. Create test data using `test_setup.py`
-2. Test database creation with `mkdb.py`
-3. Test input standardization with `inputInit.py`
-4. Test read processing with `ingest.py`
-5. Verify database integrity and data quality
-6. Clean up all test artifacts
+1. Generate synthetic test data (20 reads, 2 reference sequences)
+2. Run the complete pipeline workflow
+3. Verify all outputs and database tables
+4. Clean up test artifacts
 
-## Test Coverage
+**Expected output:** All tests pass with success message.
 
-The test suite (`test_pipeline.py`) includes **17 tests** covering:
+## What the Test Validates
 
-### mkdb.py (3 tests)
-- ✓ Database file creation
-- ✓ Database schema (all tables present)
-- ✓ Mods table population
+### Database Creation (mkdb.py)
+- ✓ Database file is created (`SMA_{exp_id}.db`)
+- ✓ All required tables exist (Reads, Mods, Exp, Refseq)
+- ✓ Mods table is pre-populated with modification bitflags
+- ✓ Indices are created for common queries
 
-### inputInit.py (4 tests)
-- ✓ Input directory creation
-- ✓ BAM symlink creation
-- ✓ Pod5 directory symlink creation
-- ✓ Reference FASTA symlink creation
+### Input Standardization (inputInit.py)
+- ✓ BAM filename is parsed correctly for metadata
+- ✓ Symlinks are created in `Input/` directory
+- ✓ Directory structure follows convention
 
-### ingest.py (7 tests)
-- ✓ Output directory creation
-- ✓ Output BAM file creation
-- ✓ Database read insertion
-- ✓ Reference sequence population
-- ✓ Reference matching logic
-- ✓ Quality metric calculation (q_bc)
-- ✓ Levenshtein distance calculation
+### Read Processing (ingest.py)
+- ✓ Reference sequences are parsed and stored
+- ✓ Reads are matched to references by length
+- ✓ Quality metrics are calculated (q_bc)
+- ✓ Levenshtein distance is calculated for matched reads (ed, q_ld)
+- ✓ Reads are tagged with End Reason (ER) in output BAM
+- ✓ All reads are inserted into database
+- ✓ NULL values for unmatched reads are handled correctly
 
-### Integration (3 tests)
-- ✓ Complete read data in database
-- ✓ Unique ID format validation
-- ✓ Foreign key relationship integrity
+## Test Data
+
+The test creates:
+- **Reference FASTA**: 2 sequences (short ~200bp, long ~500bp)
+- **Input BAM**: 20 synthetic reads
+  - ~7 reads matching short reference (±50bp)
+  - ~7 reads matching long reference (±50bp)
+  - ~6 reads outside both ranges (unmatched)
+- **Pod5 directory**: Empty (end reasons will be 'unknown')
 
 ## Manual Testing
 
-### 1. Create Test Data
+For manual testing with your own data:
 
+### 1. Create Database
 ```bash
-python test_setup.py
+python mkdb.py MY_EXP
 ```
 
-This creates:
-- `test_data/reference.fa` - Reference FASTA with 2 sequences (200bp and 500bp)
-- `test_data/TEST001_h_v5.2.0_1_6mA.bam` - Test BAM with 50 reads
-- `test_data/pod5/` - Empty Pod5 directory (end reasons will be 'unknown')
+### 2. Prepare Input Files
 
-### 2. Run Pipeline
-
-```bash
-# Initialize database
-python mkdb.py TEST001
-
-# Standardize inputs
-python inputInit.py --bam test_data/TEST001_h_v5.2.0_1_6mA.bam \
-                    --pod5 test_data/pod5 \
-                    --ref test_data/reference.fa
-
-# Process reads
-python ingest.py TEST001
+Ensure your BAM file follows the naming convention:
+```
+{exp_id}_{model_tier}_v{model_ver}_{trim}_{mods}.bam
 ```
 
-### 3. Verify Results
+Example: `MY_EXP_h_v5.2.0_1_6mA.bam`
 
-Check database contents:
-
+### 3. Standardize Inputs
 ```bash
-# Count total reads
-sqlite3 SMA_TEST001.db "SELECT COUNT(*) FROM Reads;"
+python inputInit.py \
+  --bam /path/to/MY_EXP_h_v5.2.0_1_6mA.bam \
+  --pod5 /path/to/pod5_dir \
+  --ref /path/to/reference.fa \
+  --force
+```
 
-# View reference distribution
-sqlite3 SMA_TEST001.db "SELECT refseq_id, COUNT(*) FROM Reads GROUP BY refseq_id;"
+### 4. Process Reads
+```bash
+python ingest.py MY_EXP
+```
 
-# Check quality metrics
-sqlite3 SMA_TEST001.db "SELECT AVG(q_bc), AVG(q_ld) FROM Reads WHERE refseq_id IS NOT NULL;"
+### 5. Verify Outputs
+
+Check database:
+```bash
+sqlite3 SMA_MY_EXP.db "SELECT COUNT(*) FROM Reads;"
 ```
 
 Check output BAM:
-
 ```bash
-samtools view -c Output/TEST001.bam
+samtools view Output/MY_EXP.bam | head
 ```
 
-### 4. Clean Up
+## Troubleshooting
 
+### Missing Dependencies
+If you see import errors, install dependencies:
 ```bash
-rm -rf SMA_TEST001.db Input/ Output/ test_data/
+pip install -r requirements.txt
 ```
 
-## Test Results Example
-
+### BAM Filename Format Error
+Ensure your BAM filename follows the exact format:
 ```
-======================================================================
-ONT-SMA-seq Pipeline Test Suite
-======================================================================
-
---- Testing mkdb.py ---
-✓ mkdb: Database file created
-✓ mkdb: All required tables created
-✓ mkdb: Mods table populated
-
---- Testing inputInit.py ---
-✓ inputInit: Input directory created
-✓ inputInit: Created TEST001_h_v5.2.0_1_6mA.bam
-✓ inputInit: Created TEST001_pod5
-✓ inputInit: Created TEST001.fa
-
---- Testing ingest.py ---
-✓ ingest: Output directory created
-✓ ingest: Output BAM created
-✓ ingest: Reads inserted into database
-✓ ingest: Reference sequences populated
-✓ ingest: Reference matching performed
-✓ ingest: Quality metrics (q_bc) calculated
-✓ ingest: Levenshtein distance calculated for matched reads
-
---- Testing Pipeline Integration ---
-✓ integration: Database contains complete read data
-✓ integration: Unique ID format correct
-✓ integration: Modification foreign keys valid
-
-======================================================================
-Test Results: 17/17 passed
-======================================================================
+{exp_id}_{s|h|f}_v{version}_{0|1}_{modifications}.bam
 ```
 
-## Dependencies
+- Model tier: `s` (sup), `h` (hac), or `f` (fast)
+- Trim: `0` (no trim) or `1` (trimmed)
+- Modifications: `non`, `6mA`, `5mC`, or combinations like `6mA+5mC_5hmC`
 
-Testing requires:
-- Python 3.6+
-- pysam
-- edlib
-- pod5 (optional - pipeline handles missing pod5 gracefully)
+### No Pod5 Files
+The pipeline handles missing Pod5 files gracefully. End reasons will be set to "unknown" for all reads.
 
-Install with:
-```bash
-pip install pysam edlib pod5
-```
+### Reference Matching
+Reads are matched to references based on length ± 150bp tolerance. Reads outside this range will have NULL refseq_id, ed, and q_ld values.
+
+## Test Coverage
+
+Current test coverage:
+- ✓ Full pipeline workflow (mkdb → inputInit → ingest)
+- ✓ Database schema and population
+- ✓ Metadata parsing from filenames
+- ✓ Reference sequence matching
+- ✓ Quality metric calculations
+- ✓ BAM tagging with ER tags
+- ✓ Handling of matched and unmatched reads
+
+Not currently tested (requires real data):
+- Pod5 end reason extraction (test uses empty Pod5 directory)
+- Additional BAM tags extraction (channel, well, etc.)
+- Large-scale performance (test uses only 20 reads)
