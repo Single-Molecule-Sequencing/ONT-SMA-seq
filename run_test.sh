@@ -20,5 +20,3 @@ fi
 
 # Run the test
 python3 test_e2e.py
-
-exit $?
