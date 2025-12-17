@@ -49,7 +49,7 @@ def create_test_data(test_dir):
     Create minimal test data for the pipeline.
     
     Returns:
-        Tuple of (bam_path, pod5_dir, ref_path)
+        Tuple of (bam_path, pod5_dir, ref_path, reads_data)
     """
     print("\n=== Creating test data ===")
     
