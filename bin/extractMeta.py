@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # extractMeta.py
-# Extract metadata from Pod5 files using pod5 view CLI for fast parsing
+# Extract ER metadata from Pod5 files using pod5 view CLI for fast parsing
 
 import argparse
 import sys
@@ -15,7 +15,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description="Extract Metadata from Pod5 files")
 parser.add_argument("-i", "--input", required=True, 
 	help="Path to input directory containing .pod5 files")
-parser.add_argument("-o", "--output", required=True,
+parser.add_argument("-o", "--output", default="./pod5_ER_summary.tsv",
 	help="Path to output summary TSV file")
 args = parser.parse_args()
 
