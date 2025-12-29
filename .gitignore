@@ -22,6 +22,7 @@ plots/
 dev/
 data/
 backup/
+old/
 
 # Large raw sequencing data
 *.fastq
