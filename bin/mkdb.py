@@ -13,9 +13,9 @@ import time
 ############
 
 parser = argparse.ArgumentParser(description="Initialize SMA Database")
-parser.add_argument("-e", "--expid", required=True, 
+parser.add_argument("-e", "--expid", required=True,
 	help="Experiment ID")
-parser.add_argument("-o", "--outdir", default=".", 
+parser.add_argument("-o", "--outdir", default=".",
 	help="Output directory [%(default)s]")
 args = parser.parse_args()
 
@@ -58,11 +58,6 @@ c.execute('''
 		q_bc REAL,
 		q_ld REAL,
 		ER TEXT,
-		channel INTEGER,
-		well INTEGER,
-		pore_type TEXT,
-		num_samples INTEGER,
-		start_sample INTEGER,
 		FOREIGN KEY(refseq_id) REFERENCES Refseq(refseq_id),
 		FOREIGN KEY(mod_bitflag) REFERENCES Mods(mod_bitflag)
 	)
