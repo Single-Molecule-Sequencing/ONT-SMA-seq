@@ -54,7 +54,8 @@ The overhaul turns the original NextFlow pipeline into an efficient database str
 * **Logic Flow:**
     1. **Parse Reference (FASTA):**
         * Read `Input/{exp_id}.fa` (contains exactly 2 sequences: long and short).
-        * Calculate `refseqrange` for each: $(Len_{seq} - 150, Len_{seq} + 150)$.
+        * Calculate `refseqrange` for each: $(Len_{seq} - k, Len_{seq} + k)$.
+          * With $k$ being the tolerance
         * **DB Action:** Insert entries into the `Refseq` table.
     2. **Load Metadata Summary (Fast):**
         * Read `Input/{exp_id}_summary.tsv` (generated in Script C) into a Pandas DataFrame.
