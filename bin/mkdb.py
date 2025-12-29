@@ -15,7 +15,7 @@ import time
 parser = argparse.ArgumentParser(description="Initialize SMA Database")
 parser.add_argument("-e", "--expid", required=True,
 	help="Experiment ID")
-parser.add_argument("-o", "--outdir", default=".",
+parser.add_argument("-o", "--outdir", default="Output",
 	help="Output directory [%(default)s]")
 args = parser.parse_args()
 
