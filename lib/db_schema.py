@@ -228,9 +228,26 @@ def create_central_db(db_path: str) -> sqlite3.Connection:
 
     Returns:
         sqlite3.Connection to the created database
+
+    Note:
+        The caller is responsible for closing the returned connection.
+        The connection can be used as a context manager:
+
+            with create_central_db("path/to/db.sqlite") as conn:
+                # use connection
+            # connection is automatically closed
+
+        Or closed explicitly:
+
+            conn = create_central_db("path/to/db.sqlite")
+            try:
+                # use connection
+            finally:
+                conn.close()
     """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(CENTRAL_SCHEMA)
     conn.commit()
     return conn
@@ -281,9 +298,26 @@ def create_sma_db(db_path: str) -> sqlite3.Connection:
 
     Returns:
         sqlite3.Connection to the created database
+
+    Note:
+        The caller is responsible for closing the returned connection.
+        The connection can be used as a context manager:
+
+            with create_sma_db("path/to/sma.sqlite") as conn:
+                # use connection
+            # connection is automatically closed
+
+        Or closed explicitly:
+
+            conn = create_sma_db("path/to/sma.sqlite")
+            try:
+                # use connection
+            finally:
+                conn.close()
     """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript(SMA_SCHEMA)
     conn.commit()
     return conn
