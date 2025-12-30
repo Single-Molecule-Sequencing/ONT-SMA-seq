@@ -74,3 +74,6 @@ __pycache__/
 *.swo
 .vscode/
 .idea/
+
+# Git worktrees
+.worktrees/
