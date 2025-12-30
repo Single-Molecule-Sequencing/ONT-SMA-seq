@@ -211,9 +211,15 @@ with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as in_bam, \
 
 		# 1. q_bc (Basecall Quality)
 		q_scores = read.query_qualities
-		if q_scores and len(q_scores) > 0:
-			probs = np.power(10, -np.array(q_scores) / 10.0)
+		if q_scores:
+			# Safe conversion
+			q_arr = np.array(q_scores, dtype=np.float64)
+
+			# Vectorized calculation
+			probs = np.power(10, -q_arr / 10.0)
 			avg_prob = np.mean(probs)
+
+			# Avoid log(0) error
 			if avg_prob > 0:
 				q_bc = -10 * math.log10(avg_prob)
 			else:
