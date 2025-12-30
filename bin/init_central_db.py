@@ -31,7 +31,7 @@ def main():
     db_path = Path(args.output)
 
     if db_path.exists() and not args.force:
-        print(f"[init_central_db] Error: {db_path} already exists. Use --force to overwrite.")
+        print(f"[init_central_db] Error: {db_path} already exists. Use --force to overwrite.", file=sys.stderr)
         sys.exit(1)
 
     if db_path.exists() and args.force:
@@ -39,28 +39,39 @@ def main():
         print(f"[init_central_db] Removed existing database: {db_path}")
 
     print(f"[init_central_db] Creating database: {db_path}")
-    conn = create_central_db(str(db_path))
+    try:
+        conn = create_central_db(str(db_path))
+        try:
+            print("[init_central_db] Populating lookup tables...")
+            populate_lookups(conn)
 
-    print("[init_central_db] Populating lookup tables...")
-    populate_lookups(conn)
+            # Report table counts
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
+                print(f"[init_central_db] Created {len(tables)} tables")
 
-    # Report table counts
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = cursor.fetchall()
-    print(f"[init_central_db] Created {len(tables)} tables")
-
-    # Count lookup entries
-    lk_tables = [t[0] for t in tables if t[0].startswith('lk_')]
-    total_lookups = 0
-    for table in lk_tables:
-        cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        count = cursor.fetchone()[0]
-        total_lookups += count
-    print(f"[init_central_db] Populated {total_lookups} lookup entries across {len(lk_tables)} lookup tables")
-
-    conn.close()
-    print(f"[init_central_db] Done. Database ready at: {db_path}")
+                # Count lookup entries
+                lk_tables = [t[0] for t in tables if t[0].startswith('lk_')]
+                total_lookups = 0
+                for table in lk_tables:
+                    # Validate table name (SQL injection prevention)
+                    if not all(c.isalnum() or c == '_' for c in table):
+                        print(f"[init_central_db] Warning: Skipping invalid table name: {table}", file=sys.stderr)
+                        continue
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    total_lookups += count
+                print(f"[init_central_db] Populated {total_lookups} lookup entries across {len(lk_tables)} lookup tables")
+            finally:
+                cursor.close()
+        finally:
+            conn.close()
+        print(f"[init_central_db] Done. Database ready at: {db_path}")
+    except Exception as e:
+        print(f"[init_central_db] Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
