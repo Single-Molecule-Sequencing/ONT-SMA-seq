@@ -4,6 +4,49 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+# Column whitelists for SQL injection prevention
+EXPERIMENTS_COLUMNS = {
+    'experiment_path', 'instrument', 'flow_cell_id', 'sample_id',
+    'protocol', 'started', 'pod5_count', 'pod5_dir', 'created_at'
+}
+
+BASECALL_RUNS_COLUMNS = {
+    'model_tier', 'model_version', 'trim', 'mod_bitflag', 'dorado_version',
+    'dorado_args', 'batch_size', 'emit_moves', 'gpu_model', 'slurm_job_id',
+    'runtime_seconds', 'bam_path', 'sma_db_path', 'status', 'created_at'
+}
+
+LIBRARY_SPECS_COLUMNS = {
+    'lib_version', 'description', 'created_by', 'project', 'pore_type',
+    'flow_cell_type', 'sequencing_kit', 'status', 'created_at'
+}
+
+READS_COLUMNS = {
+    'readseq', 'readlen', 'q_bc', 'ed', 'q_ld', 'ref_id', 'end_reason'
+}
+
+RUN_SUMMARIES_COLUMNS = {
+    'total_reads', 'matched_reads', 'mean_qbc', 'median_qbc', 'mean_ed',
+    'median_ed', 'mean_qld', 'er_signal_pos', 'er_signal_neg', 'er_unblock',
+    'er_other', 'created_at'
+}
+
+
+def _validate_columns(kwargs_keys: set, valid_columns: set, table_name: str) -> None:
+    """Validate that all kwargs keys are valid column names.
+
+    Args:
+        kwargs_keys: Set of column names from kwargs
+        valid_columns: Set of valid column names for the table
+        table_name: Name of the table (for error messages)
+
+    Raises:
+        ValueError: If any invalid column names are found
+    """
+    invalid_cols = kwargs_keys - valid_columns
+    if invalid_cols:
+        raise ValueError(f"Invalid columns for {table_name} table: {invalid_cols}")
+
 
 class CentralDB:
     """Operations for central nanopore_unified.db database.
@@ -51,7 +94,9 @@ class CentralDB:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - close connection."""
+        """Context manager exit - rollback on exception and close connection."""
+        if exc_type is not None and self._conn is not None:
+            self._conn.rollback()
         self.close()
 
     def _row_to_dict(self, row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
@@ -82,15 +127,23 @@ class CentralDB:
                 - pod5_dir: Path to POD5 directory
 
         Raises:
+            ValueError: If invalid column names are provided
             sqlite3.IntegrityError: If exp_id already exists
         """
+        # Validate column names to prevent SQL injection
+        _validate_columns(set(kwargs.keys()), EXPERIMENTS_COLUMNS, 'experiments')
+
         columns = ['exp_id'] + list(kwargs.keys())
         placeholders = ['?'] * len(columns)
         values = [exp_id] + list(kwargs.values())
 
         sql = f"INSERT INTO experiments ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-        self.conn.execute(sql, values)
-        self.conn.commit()
+        try:
+            self.conn.execute(sql, values)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_experiment(self, exp_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve an experiment by ID.
@@ -143,15 +196,23 @@ class CentralDB:
                 - status: Run status ('pending', 'running', 'complete', 'failed')
 
         Raises:
+            ValueError: If invalid column names are provided
             sqlite3.IntegrityError: If run_id exists or exp_id not found
         """
+        # Validate column names to prevent SQL injection
+        _validate_columns(set(kwargs.keys()), BASECALL_RUNS_COLUMNS, 'basecall_runs')
+
         columns = ['run_id', 'exp_id'] + list(kwargs.keys())
         placeholders = ['?'] * len(columns)
         values = [run_id, exp_id] + list(kwargs.values())
 
         sql = f"INSERT INTO basecall_runs ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-        self.conn.execute(sql, values)
-        self.conn.commit()
+        try:
+            self.conn.execute(sql, values)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_basecall_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a basecall run by ID.
@@ -214,17 +275,21 @@ class CentralDB:
             status: New status value
             sma_db_path: Optional path to SMA database
         """
-        if sma_db_path is not None:
-            self.conn.execute(
-                "UPDATE basecall_runs SET status = ?, sma_db_path = ? WHERE run_id = ?",
-                (status, sma_db_path, run_id)
-            )
-        else:
-            self.conn.execute(
-                "UPDATE basecall_runs SET status = ? WHERE run_id = ?",
-                (status, run_id)
-            )
-        self.conn.commit()
+        try:
+            if sma_db_path is not None:
+                self.conn.execute(
+                    "UPDATE basecall_runs SET status = ?, sma_db_path = ? WHERE run_id = ?",
+                    (status, sma_db_path, run_id)
+                )
+            else:
+                self.conn.execute(
+                    "UPDATE basecall_runs SET status = ? WHERE run_id = ?",
+                    (status, run_id)
+                )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # ========== Library Spec Operations ==========
 
@@ -245,15 +310,23 @@ class CentralDB:
                 - status: 'draft', 'active', 'archived', 'deprecated'
 
         Raises:
+            ValueError: If invalid column names are provided
             sqlite3.IntegrityError: If lib_id already exists
         """
+        # Validate column names to prevent SQL injection
+        _validate_columns(set(kwargs.keys()), LIBRARY_SPECS_COLUMNS, 'library_specs')
+
         columns = ['lib_id', 'lib_name'] + list(kwargs.keys())
         placeholders = ['?'] * len(columns)
         values = [lib_id, lib_name] + list(kwargs.values())
 
         sql = f"INSERT INTO library_specs ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-        self.conn.execute(sql, values)
-        self.conn.commit()
+        try:
+            self.conn.execute(sql, values)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_library_spec(self, lib_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a library specification by ID.
@@ -288,12 +361,16 @@ class CentralDB:
         Raises:
             sqlite3.IntegrityError: If link already exists or IDs not found
         """
-        self.conn.execute(
-            """INSERT INTO lib_experiment_link (lib_id, exp_id, relationship, run_purpose)
-               VALUES (?, ?, ?, ?)""",
-            (lib_id, exp_id, relationship, run_purpose)
-        )
-        self.conn.commit()
+        try:
+            self.conn.execute(
+                """INSERT INTO lib_experiment_link (lib_id, exp_id, relationship, run_purpose)
+                   VALUES (?, ?, ?, ?)""",
+                (lib_id, exp_id, relationship, run_purpose)
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # ========== Query Operations ==========
 
@@ -364,7 +441,9 @@ class SMADB:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - close connection."""
+        """Context manager exit - rollback on exception and close connection."""
+        if exc_type is not None and self._conn is not None:
+            self._conn.rollback()
         self.close()
 
     def _row_to_dict(self, row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
@@ -391,15 +470,23 @@ class SMADB:
                 - end_reason: End reason from POD5
 
         Raises:
+            ValueError: If invalid column names are provided
             sqlite3.IntegrityError: If (read_id, run_id) already exists
         """
+        # Validate column names to prevent SQL injection
+        _validate_columns(set(kwargs.keys()), READS_COLUMNS, 'reads')
+
         columns = ['read_id', 'run_id'] + list(kwargs.keys())
         placeholders = ['?'] * len(columns)
         values = [read_id, run_id] + list(kwargs.values())
 
         sql = f"INSERT INTO reads ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-        self.conn.execute(sql, values)
-        self.conn.commit()
+        try:
+            self.conn.execute(sql, values)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def insert_reads_batch(self, reads: List[tuple]) -> None:
         """Bulk insert read records for performance.
@@ -411,13 +498,18 @@ class SMADB:
 
         Note:
             This method is optimized for bulk inserts and commits
-            only once at the end of all inserts.
+            only once at the end of all inserts. Column validation is not
+            performed since this uses a fixed schema.
         """
         sql = """INSERT INTO reads
                  (read_id, run_id, readseq, readlen, q_bc, ed, q_ld, ref_id, end_reason)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-        self.conn.executemany(sql, reads)
-        self.conn.commit()
+        try:
+            self.conn.executemany(sql, reads)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # ========== Run Summary Operations ==========
 
@@ -438,15 +530,25 @@ class SMADB:
                 - er_signal_neg: Count of signal_negative end reasons
                 - er_unblock: Count of unblock end reasons
                 - er_other: Count of other end reasons
+
+        Raises:
+            ValueError: If invalid column names are provided
         """
+        # Validate column names to prevent SQL injection
+        _validate_columns(set(kwargs.keys()), RUN_SUMMARIES_COLUMNS, 'run_summaries')
+
         columns = ['run_id'] + list(kwargs.keys())
         placeholders = ['?'] * len(columns)
         values = [run_id] + list(kwargs.values())
 
         sql = f"""INSERT OR REPLACE INTO run_summaries
                   ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"""
-        self.conn.execute(sql, values)
-        self.conn.commit()
+        try:
+            self.conn.execute(sql, values)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_run_summary(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a run summary by ID.
