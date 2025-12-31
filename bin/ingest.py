@@ -12,6 +12,13 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+# Try to import unified DB (optional integration)
+try:
+    from lib import CentralDB
+    UNIFIED_DB_AVAILABLE = True
+except ImportError:
+    UNIFIED_DB_AVAILABLE = False
+
 ############
 # argparse #
 ############
@@ -31,6 +38,10 @@ parser.add_argument("-o", "--output_bam", required=True,
 	help="Path to output tagged BAM file")
 parser.add_argument("-k", "--tolerance", type=int, default=150,
 	help="Length tolerance +/- bp for RefSeq matching [%(default)s]")
+parser.add_argument("--central-db",
+	help="Path to central unified database (enables integration)")
+parser.add_argument("--run-id",
+	help="Basecall run ID for tracking (required if --central-db is set)")
 
 args = parser.parse_args()
 
@@ -266,6 +277,20 @@ conn.commit()
 conn.close()
 
 print(f"[ingest] Ingested Reads into {DB_PATH} and wrote tagged BAM to {OUTPUT_BAM}")
+
+# Update central database if provided
+if args.central_db and UNIFIED_DB_AVAILABLE:
+    if not args.run_id:
+        print("[ingest] Warning: --central-db requires --run-id. Skipping central DB update.", file=sys.stderr)
+    else:
+        print(f"[ingest] Updating central database: {args.central_db}")
+        with CentralDB(args.central_db) as central:
+            central.update_basecall_run_status(
+                args.run_id,
+                status='analyzed',
+                sma_db_path=str(DB_PATH)
+            )
+        print(f"[ingest] Updated run {args.run_id} status to 'analyzed'")
 
 print(f"[ingest] Complete.")
 print(f"  - Total Reads:  {count_total}")
