@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+
 ############
 # argparse #
 ############
@@ -156,6 +157,7 @@ except (IndexError, ValueError) as e:
 print(f"[ingest] BAM metadata:\ntier - [{tier}]\nver  - [{ver_str}]\ntrim - [{trim}]\nmods - [{mods}]")
 
 print(f"[ingest] Processed BAM filename metadata")
+
 
 ########################
 # Main Processing Loop #
