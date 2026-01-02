@@ -1,6 +1,6 @@
 # ONT-SMA-seq
 
-The Single-Molecule-Accuracy-seq protocol for Oxford Nanopore Technology experiments, implemented in pure Python with a SQLite database backend. This workflow processes unaligned BAM files and Pod5 files from a single ONT experiment, storing read metrics and metadata into a structured database for analysis.
+The Single-Molecule-Accuracy-seq protocol for Oxford Nanopore Technology experiments, implemented in pure Python with a SQLite database backend. This workflow processes an unaligned BAM file and its parent Pod5 files from a single ONT experiment, storing read metrics and metadata into a structured database for analysis.
 
 ## Setup
 
@@ -11,7 +11,7 @@ conda env create -f env/env.yml
 conda activate ont-sma-seq
 ```
 
-Note: `edlib` might fail to be imported despite proper conda installation. If this issue is encountered, reinstall with `pip`.
+Note: `edlib` might fail to be imported despite proper conda installation. If this issue is encountered, reinstall it with `pip`.
 
 Within activated conda env:
 
