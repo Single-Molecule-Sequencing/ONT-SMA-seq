@@ -25,9 +25,18 @@ mkdb.py → inputInit.py → extractMeta.py → ingest.py
 ## Commands
 
 ### Environment Setup
+
+**IMPORTANT:** Always activate the conda environment before running scripts. The environment pins `numpy<2.0` to avoid pandas compatibility issues.
+
 ```bash
+# Create the environment (first time only)
 conda env create -f env/env.yml
+
+# Activate before running scripts
 conda activate ont-sma-seq
+
+# Or run scripts without activating
+conda run -n ont-sma-seq python bin/<script>.py
 ```
 
 ### Full Pipeline Execution
@@ -109,7 +118,9 @@ python bin/<script>.py --help
 
 ## Dependencies
 
-Core: `pysam`, `edlib`, `pandas`, `numpy`, `pod5` (CLI and library)
+Core: `pysam`, `edlib`, `pandas`, `numpy<2.0`, `pod5` (CLI and library)
+
+**Note:** numpy<2.0 is required due to pandas binary compatibility. Using numpy 2.x causes `_ARRAY_API not found` errors.
 
 Visualization (future): `matplotlib`, `seaborn`
 
