@@ -77,3 +77,6 @@ __pycache__/
 
 # Git worktrees
 .worktrees/
+
+# Production database
+nanopore_unified.db
