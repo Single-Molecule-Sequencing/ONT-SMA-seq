@@ -1,12 +1,20 @@
-# Overhaul Plan: Single-Pass Database Ingestion
+# Overhaul Plan: Single-Target Database Ingestion
 
-## **Architecture Overview**
+## Architecture Overview
 
-The overhaul turns the original NextFlow pipeline into an efficient database structure using distinct scripts to separate concerns: database creation, input standardization, metadata extraction, and core ingestion logic.
+The pipeline is now restructured to operate on a **Per-Target Sequence** basis. For every target sequence in an overarching experiment, a dedicated SQLite database is generated. This creates a modular "building block" architecture where individual Target DBs can be merged into a master database later.
 
-* **Language:** Python 3.x (with Shell/CLI for Pod5 extraction)
-* **Key Libraries:** `pysam` (BAM I/O), `pandas` (CSV/TSV parsing), `edlib` (Levenshtein), `sqlite3`, `argparse`.
-* **CLI Tools:** `pod5` (via `pod5 view`).
+**Language:** Python 3.x (with Shell/CLI for Pod5 extraction)
+
+**Key Libraries:** `pysam` (BAM I/O), `pandas` (CSV/TSV parsing), `edlib` (Levenshtein), `sqlite3`, `argparse`.
+
+**CLI Tools:** `pod5` (via `pod5 view`).
+
+**Scope:** 1 Input BAM + 1 Input Pod5 Dir + 1 Reference FASTA (containing **single** sequence) -> 1 SQLite DB.
+
+**Philosophy:** "Capture All, Filter Later." All reads are ingested and compared against the single target reference. Length filtering and quality thresholds are applied during post-hoc SQL analysis instead of during ingestion.
+
+**Mergeability:** Primary Keys (`uniq_id`, `tgt_id`, `exp_id`) are designed to be distinct or consistent to allow safe merging of multiple Target DBs.
 
 ---
 
@@ -14,69 +22,74 @@ The overhaul turns the original NextFlow pipeline into an efficient database str
 
 ### **Script A: `mkdb.py` (Database Initialization)**
 
-* **Purpose:** Initializes the SQLite database schema and populates static lookup tables.
-* **Input:** `exp_id` (via argparse).
-* **Output:** `SMA_{exp_id}.db`.
-* **Logic:**
-    1. Create the database file `SMA_{exp_id}.db`.
-    2. Execute DDL to create tables: `Reads`, `Mods`, `Exp`, `Refseq`.
-    3. **Populate `Mods` Table:** Insert the standard bitflag definitions (see *Modification Bitflags* section).
+**Purpose:** Initializes the SQLite database schema and populates static lookup tables.
+
+**Input:** `exp_id` (via argparse).
+
+**Output:** `SMA_{exp_id}_{tgt_id}.db` (Naming convention suggested to avoid overwrites if running in parallel, though user defines output path).
+
+**Logic:**
+
+1. Create the database file.
+2. Execute DDL to create tables: `Reads`, `Mods`, `Exp`, `Target`.
+3. **Populate `Mods` Table:** Insert the standard bitflag definitions (see *Modification Bitflags* section).
 
 ### **Script B: `inputInit.py` (Input Standardization)**
 
-* **Purpose:** Standardizes input file paths and directory structures.
-* **Inputs (via argparse):**
-    1. Path to raw uBAM (Must follow naming convention: `{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam`).
-    2. Path to raw Pod5 directory.
-    3. Path to Reference FASTA.
-* **Logic:**
-    1. **Parse BAM Filename:** Extract metadata components (`exp_id`, `model`, `ver`, `trim`, `mods`) directly from the input BAM filename.
-    2. **Directory Setup:** Create `Input/` directory if it doesn't exist.
-    3. **Symlink Inputs:**
-        * BAM $\to$ `Input/{exp_id}_{bc_model_type}_v{bc_model_version}_{trim}_{modifications}.bam`
-        * Pod5 Dir $\to$ `Input/{exp_id}_pod5/`
-        * RefSeq $\to$ `Input/{exp_id}.fa`
+**Purpose:** Standardizes input file paths and directory structures.
+
+**Inputs (via argparse):**
+
+1. Path to raw uBAM.
+2. Path to raw Pod5 directory.
+3. Path to Reference FASTA (**Must contain exactly 1 sequence**).
+
+**Logic:**
+
+1. **Parse BAM Filename:** Extract metadata components (`exp_id`, `model`, `ver`, `trim`, `mods`).
+2. **Directory Setup:** Create `Input/` directory.
+3. **Symlink Inputs:**
+   1. BAM  `Input/reads.bam` (Simplified name since metadata is in DB).
+   2. Pod5 Dir  `Input/pod5/`
+   3. RefSeq  `Input/target.fa`
 
 ### **Script C: `extractMeta.py` (Metadata Extraction)**
 
-* **Purpose:** Generates the lightweight metadata summary required for ingestion using the optimized pod5 CLI.
-* **Inputs (via argparse):**
-    1. `exp_id` (used to locate the standardized input directory).
-* **Logic:**
-    1. **Locate Input:** Target `Input/{exp_id}_pod5/`.
-    2. **Execute Extraction:** Run the `pod5 view` command via `subprocess` or shell wrapper.
-        * **Command:** `pod5 view Input/{exp_id}_pod5/*.pod5 --include "read_id,end_reason" --output Input/{exp_id}_summary.tsv`
-        * *Note:* Only extracting `read_id` and `end_reason` to keep I/O minimal.
+**Purpose:** Generates the lightweight metadata summary required for ingestion using the optimized `pod5` CLI.
+
+**Inputs (via argparse):** Path to Input Pod5 directory.
+
+**Logic:**
+
+1. **Execute Extraction:** Run `pod5 view` on `Input/pod5/`.
+   1. **Command:** `pod5 view Input/pod5/*.pod5 --include "read_id,end_reason" --output Input/summary.tsv`
 
 ### **Script D: `ingest.py` (Main Processing)**
 
-* **Purpose:** Parses inputs, calculates metrics, tags BAMs, and populates the database.
-* **Logic Flow:**
-    1. **Parse Reference (FASTA):**
-        * Read `Input/{exp_id}.fa` (contains exactly 2 sequences: long and short).
-        * Calculate `refseqrange` for each: $(Len_{seq} - k, Len_{seq} + k)$.
-          * With $k$ being the tolerance
-        * **DB Action:** Insert entries into the `Refseq` table.
-    2. **Load Metadata Summary (Fast):**
-        * Read `Input/{exp_id}_summary.tsv` (generated in Script C) into a Pandas DataFrame.
-        * **Map:** `{read_id: end_reason}`.
-    3. **Stream & Process Reads:**
-        * Create `Output/{exp_id}` directory.
-        * Open Input BAM (Read) and `Output/{exp_id}.bam` (Write).
-        * **Loop through every read:**
-            1. **ER Lookup:** Retrieve End Reason from the loaded summary dictionary.
-            2. **Tagging:** Write read to Output BAM with new SAM-compliant tag `ER:Z:<end_reason>`.
-            3. **RefSeq Matching:** Compare `readlen` against the calculated `refseqrange` of the two references.
-                * *If inside range:* Assign specific `refseq_id`.
-                * *If outside range:* Set `refseq_id` to `NULL` (None).
-            4. **ID Generation:** Construct `uniq_id`.
-            5. **Metric Calculation:**
-                * Calculate $q_{bc}$ (Basecall Quality).
-                * **Conditional Metric:**
-                    * *If `refseq_id` is identified:* Calculate $ed$ (Levenshtein) and $q_{ld}$.
-                    * *If `refseq_id` is NULL:* Set $ed$ and $q_{ld}$ to `NULL` (None).
-            6. **DB Action:** Insert the record into `Reads` table (including those with NULL RefSeq).
-    4. **Cleanup:** Commit DB transactions and close file handles.
+**Purpose:** Parses inputs, calculates metrics against the single target, tags BAMs, and populates the database.
+
+**Logic Flow:**
+
+   1. **Parse Target (FASTA):**
+      * Read `Input/target.fa`.
+      * **Validation:** Ensure only **1 sequence** exists.
+      * Extract `tgt_id` (defline header) and `tgt_refseq` (sequence).
+      * **DB Action:** Insert entry into the `Target` table.
+   2. **Load Metadata Summary:**
+      * Read `Input/summary.tsv` into memory (Map: `{read_id: end_reason}`).
+   3. **Stream & Process Reads:**
+      * Open Input BAM and Output BAM.
+      * **Loop through every read:**
+        1. **ER Lookup:** Retrieve End Reason.
+        2. **Tagging:** Write `ER:Z:<end_reason>` tag to read.
+        3. **ID Generation:** Construct `uniq_id`.
+        4. **Metric Calculation (All Reads):**
+           * Calculate  (Basecall Quality).
+           * Calculate  (Levenshtein Distance) vs `tgt_refseq`.
+           * Calculate  (Levenshtein Quality).
+   4. **DB Action:** Insert record into `Reads` table.
+      * `tgt_id` is always the single ID extracted from FASTA.
+   5. **Cleanup:** Commit DB transactions.
 
 ---
 
@@ -105,18 +118,16 @@ The overhaul turns the original NextFlow pipeline into an efficient database str
 
 **`uniq_id` Format:** `{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}`
 
-* *Note: read_hash is a shortened hash of the read_id/sequence to ensure uniqueness.*
-
 **Metric Formulas:**
 
 1. **$q_{bc}$ (Prob-Avg):**
     $$q_{bc} = -10 \log_{10} \left( \frac{\sum 10^{-Q_{base}/10}}{n} \right)$$
 2. **Levenshtein Distance (`ed`):**
     $$ed = \text{Levenshtein}(ReadSeq, RefSeq)$$
-    *(Only calculated if read fits in a RefSeq length range)*
+    *(Calculated for ALL reads regardless of length)*
 3. **$q_{ld}$ (Levenshtein Quality):**
     $$q_{ld} = -10 \log_{10} \left( \min \left( \max \left( \frac{1}{L^2}, \frac{ed}{L} \right), 1 \right) \right)$$
-    *(Where $L$ is the length of the matched RefSeq)*
+    *(Where $L$ is the length of the Target Reference)*
 
 ---
 
@@ -124,41 +135,53 @@ The overhaul turns the original NextFlow pipeline into an efficient database str
 
 **Reads** table
 
-| Column          | Type          | Description                                  |
-| :-------------- | :------------ | :------------------------------------------- |
-| `uniq_id`       | **TEXT (PK)** | Composite unique identifier.                 |
-| `exp_id`        | TEXT (FK)     | Experiment ID.                               |
-| `refseq_id`     | TEXT (FK)     | RefSeq ID. **NULL** if length out of range.  |
-| `read_id`       | TEXT          | Original ONT Read UUID.                      |
-| `readseq`       | TEXT          | The Basecalled Read Sequence.                |
-| `readlen`       | INT           | Length of the Read.                          |
-| `model_tier`    | TEXT          | 's', 'h', or 'f'.                            |
-| `model_ver`     | TEXT          | e.g., '5.2.0'.                               |
-| `trim`          | INT           | 1 (True) or 0 (False).                       |
-| `mod_bitflag`   | INT (FK)      | Integer sum of modification flags.           |
-| `ed`            | INT           | Levenshtein Distance. **NULL** if no RefSeq. |
-| `q_bc`          | REAL          | Probability-averaged basecall quality.       |
-| `q_ld`          | REAL          | Levenshtein quality. **NULL** if no RefSeq.  |
-| `ER`            | TEXT          | End Reason (from `pod5 view`).               |
+| Column        | Type          | Description                            |
+| ------------- | ------------- | -------------------------------------- |
+| `uniq_id`     | **TEXT (PK)** | Composite unique identifier.           |
+| `exp_id`      | TEXT (FK)     | Experiment ID.                         |
+| `tgt_id`      | TEXT (FK)     | Target Sequence ID.                    |
+| `read_id`     | TEXT          | Original ONT Read UUID.                |
+| `readseq`     | TEXT          | The Basecalled Read Sequence.          |
+| `readlen`     | INT           | Length of the Read.                    |
+| `model_tier`  | TEXT          | 's', 'h', or 'f'.                      |
+| `model_ver`   | TEXT          | e.g., '5.2.0'.                         |
+| `trim`        | INT           | 1 (True) or 0 (False).                 |
+| `mod_bitflag` | INT (FK)      | Integer sum of modification flags.     |
+| `ed`          | INT           | Levenshtein Distance vs Target.        |
+| `q_bc`        | REAL          | Probability-averaged basecall quality. |
+| `q_ld`        | REAL          | Levenshtein quality.                   |
+| `ER`          | TEXT          | End Reason (from `pod5 view`).         |
 
-**Mods** table (Populated by `mkdb.py`)
+**Target** table (Replaces Refseq)
 
-| Column        | Type         | Description                       |
-| :------------ | :----------- | :-------------------------------- |
-| `mod_bitflag` | **INT (PK)** | Sum of modification flags ($2^n$) |
-| `mods`        | TEXT         | Modifications present             |
+| Column       | Type          | Description                    |
+| ------------ | ------------- | ------------------------------ |
+| `tgt_id`     | **TEXT (PK)** | Target Sequence ID (defline).  |
+| `tgt_refseq` | TEXT          | The Target Sequence content.   |
+| `tgt_reflen` | INT           | Length of the Target Sequence. |
 
 **Exp** table
 
-| Column     | Type          | Description             |
-| :--------- | :------------ | :---------------------- |
-| `exp_id`   | **TEXT (PK)** | Experiment ID.          |
-| `exp_desc` | TEXT          | Experiment description. |
+| Column         | Type          | Description                               |
+| -------------- | ------------- | ----------------------------------------- |
+| `exp_id`       | **TEXT (PK)** | Experiment ID {flow_cell_id}_{sample_id}. |
+| `flow_cell_id` | TEXT          | Flow Cell ID.                             |
+| `sample_id`    | TEXT          | Library Prep Info YYYYMMDD_INITIALS.      |
+| `exp_desc`     | TEXT          | Experiment Description.                   |
 
-**Refseq** table (Populated by `ingest.py`)
+**Mods** table (Static Lookup)
 
-| Column      | Type          | Description                      |
-| :---------- | :------------ | :------------------------------- |
-| `refseq_id` | **TEXT (PK)** | Reference Sequence ID (defline). |
-| `refseq`    | TEXT          | Reference Sequence.              |
-| `reflen`    | INT           | Reference Sequence Length.       |
+| Column        | Type         | Description                  |
+| ------------- | ------------ | ---------------------------- |
+| `mod_bitflag` | **INT (PK)** | Sum of modification flags () |
+| `mods`        | TEXT         | Modifications present        |
+
+---
+
+## **5. Future**
+
+Since every run produces a self-contained per-target DB with a shared Schema:
+
+**Merging:** Can be done by attaching databases in SQLite into a master DB.
+
+**Multithreading** might be on the table, too.
