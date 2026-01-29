@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # extractMeta.py
-# Extract ER metadata from Pod5 files using pod5 view CLI for fast parsing
+# Extract Read ID and End Reason from Pod5 files using pod5 view CLI
 
 import argparse
 import sys
@@ -12,11 +12,11 @@ from pathlib import Path
 # argparse #
 ############
 
-parser = argparse.ArgumentParser(description="Extract Metadata from Pod5 files")
-parser.add_argument("-i", "--input", required=True, 
-	help="Path to input directory containing .pod5 files")
-parser.add_argument("-o", "--output", default="./pod5_ER_summary.tsv",
-	help="Path to output summary TSV file")
+parser = argparse.ArgumentParser(description="Extract end reason from Pod5 files")
+parser.add_argument("-i", "--input", default="Input/pod5",
+	help="Path to input directory containing .pod5 files [%(default)s]")
+parser.add_argument("-o", "--output", default="Input/summary.tsv",
+	help="Path to output summary TSV file [%(default)s]")
 args = parser.parse_args()
 
 
@@ -51,11 +51,10 @@ print(f"[extractMeta] Output TSV:      {output_tsv}")
 columns = "read_id,end_reason"
 
 # Construct the command
-# Note: Using --recursive to avoid shell globbing (*.pod5)
 cmd = [
 	"pod5", "view",
 	str(pod5_dir),          # Input directory
-	"--recursive",          # Find all .pod5 files inside
+	"--recursive",          # Walk directory tree
 	"--include", columns,   # Strict column filtering
 	"--output", str(output_tsv),
 	"--force-overwrite"     # Overwrite if exists
@@ -66,10 +65,9 @@ cmd_str = " ".join(cmd)
 print(f"[extractMeta] Running command:\n{cmd_str}")
 
 try:
-	subprocess.run(cmd, shell=False, check=True)
+	subprocess.run(cmd, check=True)
+	print(f"[extractMeta] Success: Summary written to {output_tsv}")
 except subprocess.CalledProcessError as e:
 	sys.exit(f"[extractMeta] Error: pod5 view failed with exit code {e.returncode}")
-except Exception as e:
-	sys.exit(f"[extractMeta] Unexpected error: {e}")
-
-print(f"[extractMeta] Summary saved to {output_tsv}")
+except FileNotFoundError:
+	sys.exit("[extractMeta] Error: 'pod5' executable not found.")
