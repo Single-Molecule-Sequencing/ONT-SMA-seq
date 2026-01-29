@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # mkdb.py
-# initialize SQLite DB and populates the static Mods table
+# initialize SQLite DB, parse Experiment ID, and populate static tables
 
 import argparse
 import os
 import sqlite3
+import sys
 import time
 
 
@@ -18,6 +19,24 @@ parser.add_argument("-e", "--expid", required=True,
 parser.add_argument("-o", "--outdir", default="Output",
 	help="Output directory [%(default)s]")
 args = parser.parse_args()
+
+
+#######
+# exp #
+#######
+
+exp_parts = args.expid.split('_')
+
+if len(exp_parts) >= 2:
+	flow_cell_id = exp_parts[0]
+	sample_id = "_".join(exp_parts[1:])
+else:
+	sys.exit(f"[mkdb] Warning: Experiment ID '{args.expid}' does not follow 'FlowCell_Sample' convention.")
+
+print(f"[mkdb] Parsed Experiment Metadata:")
+print(f"  - Exp ID:    {args.expid}")
+print(f"  - Flow Cell: {flow_cell_id}")
+print(f"  - Sample:    {sample_id}")
 
 
 ##########
@@ -46,7 +65,7 @@ c.execute('''
 	CREATE TABLE Reads (
 		uniq_id TEXT PRIMARY KEY,
 		exp_id TEXT,
-		refseq_id TEXT,
+		tgt_id TEXT,
 		read_id TEXT,
 		readseq TEXT,
 		readlen INTEGER,
@@ -58,7 +77,7 @@ c.execute('''
 		q_bc REAL,
 		q_ld REAL,
 		ER TEXT,
-		FOREIGN KEY(refseq_id) REFERENCES Refseq(refseq_id),
+		FOREIGN KEY(tgt_id) REFERENCES Target(tgt_id),
 		FOREIGN KEY(mod_bitflag) REFERENCES Mods(mod_bitflag)
 	)
 ''')
@@ -75,21 +94,25 @@ c.execute('''
 c.execute('''
 	CREATE TABLE Exp (
 		exp_id TEXT PRIMARY KEY,
+		flow_cell_id TEXT,
+		sample_id TEXT,
 		exp_desc TEXT
 	)
 ''')
 
-# Refseq Table
+# Target Table (Previously named Refseq)
 c.execute('''
-	CREATE TABLE Refseq (
-		refseq_id TEXT PRIMARY KEY,
-		refseq TEXT,
-		reflen INTEGER
+	CREATE TABLE Target (
+		tgt_id TEXT PRIMARY KEY,
+		tgt_refseq TEXT,
+		tgt_reflen INTEGER
 	)
 ''')
 
 
-# Mods Table Population
+# --- Data Population ---
+
+# 1. Populate Mods (Static)
 mods_data = [
 	(0, "non"),
 	(1, "6mA"),
@@ -105,6 +128,12 @@ mods_data = [
 
 c.executemany(
 	"INSERT OR IGNORE INTO Mods (mod_bitflag, mods) VALUES (?, ?)", mods_data)
+
+# 2. Populate Exp (Dynamic based on args)
+c.execute(
+	"INSERT INTO Exp (exp_id, flow_cell_id, sample_id, exp_desc) VALUES (?, ?, ?, ?)",
+	(args.expid, flow_cell_id, sample_id, "Initialized via mkdb")
+)
 
 # --- Commit & Close ---
 conn.commit()
