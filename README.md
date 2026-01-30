@@ -1,6 +1,6 @@
 # ONT-SMA-seq
 
-The Single-Molecule-Accuracy-seq protocol for Oxford Nanopore Technology experiments, implemented in pure Python with a SQLite database backend. This workflow processes an unaligned BAM file and its parent Pod5 files from a single ONT experiment, storing read metrics and metadata into a structured database for analysis.
+The Single-Molecule-Accuracy-seq protocol for Oxford Nanopore Technology experiments, implemented in pure Python with a SQLite database backend. This workflow processes an unaligned BAM file and its parent Pod5 files for a single target sequence within an overarching experiment, storing read metrics and metadata into a structured database for analysis.
 
 ## Setup
 
@@ -23,16 +23,17 @@ pip install edlib --force-reinstall --no-cache-dir
 
 All scripts are located in the `bin/` directory.
 
-* `mkdb.py`: Initializes the SQLite database schema and populates the static modification bitflag lookup table.
-* `inputInit.py`: Standardizes input file paths and directory structures by creating symlinks for BAMs, Pod5s, and reference sequences.
+* `mkdb.py`: Initializes the SQLite database schema, parses the Experiment ID (FlowCell/Sample), and populates static tables.
+* `inputInit.py`: Standardizes inputs. Sanitizes the Reference FASTA (ensuring only **one** sequence exists) and creates symlinks for BAMs and Pod5s.
 * `extractMeta.py`: Extracts lightweight metadata (Read ID and End Reason) from Pod5 files using the `pod5` CLI.
-* `ingest.py`: The core processing script. It parses inputs, calculates quality and alignment metrics, tags BAMs with End Reasons, and populates the database.
+* `ingest.py`: The core processing script. It parses inputs, calculates quality and alignment metrics (Levenshtein) for all reads against the target, tags BAMs with End Reasons, and populates the database.
 
 ## Usage
 
 ### `mkdb.py`
 
-Creates the initial database file.
+Creates the initial database file and parses the Experiment ID.
+**Note:** `exp_id` should follow the format `FlowCellID_SampleID` (e.g., `FAL12345_20260129_IF`).
 
 * `-e`, `--expid`: Experiment ID (Required).
 * `-o`, `--outdir`: Output directory (Default: `Output`).
@@ -43,11 +44,11 @@ python3 bin/mkdb.py -e <EXP_ID> -o <PATH_TO_OUTPUT_DIR>
 
 ### `inputInit.py`
 
-Sets up the `Input/` directory with standardized symlinks.
+Standardizes file paths and sanitizes the reference.
 
-* `-b`, `--bam`: Path to raw uBAM file. Must follow naming convention: `{exp_id}_{model}_{ver}_{trim}_{mods}.bam` (Required).
-* `-p`, `--pod5_dir`: Path to raw Pod5 directory (Required).
-* `-r`, `--ref`: Path to Reference FASTA containing two sequences of distinct lengths (Required).
+* `-b`, `--bam`: Path to raw uBAM file.
+* `-p`, `--pod5_dir`: Path to raw Pod5 directory.
+* `-r`, `--ref`: Path to Reference FASTA.
 
 ```bash
 python3 bin/inputInit.py -b <PATH_TO_BAM> -p <PATH_TO_POD5_DIR> -r <PATH_TO_REF_FASTA>
@@ -55,10 +56,10 @@ python3 bin/inputInit.py -b <PATH_TO_BAM> -p <PATH_TO_POD5_DIR> -r <PATH_TO_REF_
 
 ### `extractMeta.py`
 
-Generates a summary TSV of read metadata.
+Wrapper for `pod5 view`. Extracts End Reason metadata required for the DB.
 
-* `-i`, `--input`: Path to standardized input directory containing `.pod5` files (Required).
-* `-o`, `--output`: Path to output summary TSV file (Default: `./pod5_ER_summary.tsv`).
+* `-i`, `--input`: Path to `Input/pod5` (Default).
+* `-o`, `--output`: Path to `Input/summary.tsv` (Default).
 
 ```bash
 python3 bin/extractMeta.py -i <PATH_TO_INPUT_DIR> -o <PATH_TO_OUTPUT_TSV>
@@ -66,18 +67,17 @@ python3 bin/extractMeta.py -i <PATH_TO_INPUT_DIR> -o <PATH_TO_OUTPUT_TSV>
 
 ### `ingest.py`
 
-Populates the database with read metrics and generates a tagged BAM.
+Calculates metrics and ingests data. Requires the database created by `mkdb.py`.
 
-* `-e`, `--expid`: Experiment ID (Required).
-* `-b`, `--bam`: Path to standardized input uBAM file (Required).
-* `-s`, `--summary`: Path to input Pod5 summary TSV (Required).
-* `-r`, `--ref`: Path to standardized Reference FASTA (Required).
-* `-d`, `--database`: Path to target SQLite database file (Required).
-* `-o`, `--output_bam`: Path to output tagged BAM file (Required).
-* `-k`, `--tolerance`: Length tolerance (+/- bp) for RefSeq matching (Default: 150).
+* `-e`, `--expid`: Experiment ID (must match `mkdb.py`).
+* `-b`, `--bam`: Path to `Input/reads.bam`.
+* `-s`, `--summary`: Path to `Input/summary.tsv`.
+* `-r`, `--ref`: Path to `Input/target.fa`.
+* `-d`, `--database`: Path to the SQLite DB file.
+* `-o`, `--output_bam`: Path to output tagged BAM file.
 
 ```bash
-python3 bin/ingest.py -e <EXP_ID> -b <PATH_TO_BAM> -s <PATH_TO_SUMMARY_TSV> -r <PATH_TO_REF_FASTA> -d <PATH_TO_DB> -o <PATH_TO_OUTPUT_BAM> -k <TOLERANCE>
+python3 bin/ingest.py -e <EXP_ID> -b <PATH_TO_BAM> -s <PATH_TO_SUMMARY_TSV> -r <PATH_TO_REF_FASTA> -d <PATH_TO_DB> -o <PATH_TO_OUTPUT_BAM>
 ```
 
 ## Workflow
@@ -86,16 +86,16 @@ The workflow ingests raw ONT data from a single experiment into a SQLite databas
 
 ```txt
 Input:
-- Unaligned BAM (e.g., '<EXP_ID>_sup_v5.2.0_trim1_0.bam')
+- Unaligned BAM (e.g., 'FAL12345_20260129_IF_sup_v5.2.0_trim1_0.bam')
 - Pod5 Directory (e.g., 'raw_pod5/')
-- Reference FASTA (e.g., 'reference.fa')
+- Single-Seq FASTA (e.g., 'target.fa')
   │
   ▼
 ┌──────────────────────────┐
 │  1. Initialize Database  │
 └──────────────────────────┘
   │
-  │ Input: Experiment ID
+  │ Input: Experiment ID (FlowCell_Sample)
   │ Output: 'Output/SMA_<EXP_ID>.db'
   │
   └─► python3 bin/mkdb.py -e <EXP_ID> -o Output
@@ -105,83 +105,93 @@ Input:
 │  2. Standardize Inputs  │
 └─────────────────────────┘
   │
-  │ Input: Raw BAM, Pod5 Dir, Ref.fa
-  │ Output: 'Input/' directory with symlinks
+  │ Input: Raw BAM, Pod5 Dir, Target FASTA
+  │ Output: 'Input/' with symlinks & sanitized 'target.fa'
   │
-  └─► python3 bin/inputInit.py -b <BAM_FILE> -p <POD5_DIR> -r <REF_FASTA>
+  └─► python3 bin/inputInit.py -b <BAM_FILE> -p <POD5_DIR> -r <TARGET_FASTA>
   │
   ▼
 ┌───────────────────────┐
 │  3. Extract Metadata  │
 └───────────────────────┘
   │
-  │ Input: 'Input/<EXP_ID>_pod5/'
-  │ Output: 'Output/<EXP_ID>_summary.tsv'
+  │ Input: 'Input/pod5/' (Symlinked)
+  │ Output: 'Input/summary.tsv'
   │
-  └─► python3 bin/extractMeta.py -i Input/<EXP_ID>_pod5/ -o Output/<EXP_ID>_summary.tsv
+  └─► python3 bin/extractMeta.py -i Input/pod5/ -o Input/summary.tsv
   │
   ▼
 ┌──────────────────┐
 │  4. Ingest Data  │
 └──────────────────┘
   │
-  │ Input: Symlinked BAM, Summary TSV, Symlinked FASTA, Database
+  │ Input: 'Input/reads.bam', 'Input/summary.tsv', 'Input/target.fa'
   │ Output: Populated DB, Tagged BAM
   │
-  └─► python3 bin/ingest.py -e <EXP_ID> -b Input/<BAM_FILE> -s Output/<SUMMARY_TSV> -r Input/<REF_FASTA> -d Output/<DATABASE> -o Output/<TAGGED_BAM>
+  └─► python3 bin/ingest.py -e <EXP_ID> -b Input/reads.bam -s Input/summary.tsv -r Input/target.fa -d Output/SMA_<EXP_ID>.db -o Output/tagged.bam
   │
   ▼
 Final Output:
-- Populated SQLite DB ('Output/SMA_<EXP_ID>.db')
-- End-Reason Tagged BAM ('Output/<EXP_ID>_ER.bam')
+  * Populated SQLite DB ('Output/SMA_<EXP_ID>.db')
+  * End-Reason Tagged BAM ('Output/tagged.bam')
 ```
 
 ## Database Schema
 
 ### `Reads` Table
 
-| Column        | Type          | Description                                |
-| :------------ | :------------ | :----------------------------------------- |
-| `uniq_id`     | **TEXT (PK)** | Composite unique identifier.               |
-| `exp_id`      | TEXT (FK)     | Experiment ID.                             |
-| `refseq_id`   | TEXT (FK)     | RefSeq ID. `NULL` if length out of range.  |
-| `read_id`     | TEXT          | Original ONT Read UUID.                    |
-| `readseq`     | TEXT          | The Basecalled Read Sequence.              |
-| `readlen`     | INT           | Length of the Read.                        |
-| `model_tier`  | TEXT          | 's', 'h', or 'f'.                          |
-| `model_ver`   | TEXT          | e.g., '5.2.0'.                             |
-| `trim`        | INT           | 1 (True) or 0 (False).                     |
-| `mod_bitflag` | INT (FK)      | Integer sum of modification flags.         |
-| `ed`          | INT           | Levenshtein Distance. `NULL` if no RefSeq. |
-| `q_bc`        | REAL          | Probability-averaged basecall quality.     |
-| `q_ld`        | REAL          | Levenshtein quality. `NULL` if no RefSeq.  |
-| `ER`          | TEXT          | End Reason (from `pod5 view`).             |
+Contains metrics for every read processed.
+
+| Column        | Type          | Description                            |
+| ------------- | ------------- | -------------------------------------- |
+| `uniq_id`     | **TEXT (PK)** | Composite unique identifier.           |
+| `exp_id`      | TEXT (FK)     | Experiment ID.                         |
+| `tgt_id`      | TEXT (FK)     | Target Sequence ID.                    |
+| `read_id`     | TEXT          | Original ONT Read UUID.                |
+| `readseq`     | TEXT          | The Basecalled Read Sequence.          |
+| `readlen`     | INT           | Length of the Read.                    |
+| `model_tier`  | TEXT          | Basecaller model tier (fast/hac/sup).  |
+| `model_ver`   | TEXT          | Basecaller version (e.g., 5.2.0).      |
+| `trim`        | INT           | Barcode trimming status (0 or 1).      |
+| `mod_bitflag` | INT (FK)      | Integer sum of modification flags.     |
+| `ed`          | INT           | Levenshtein Distance vs Target.        |
+| `q_bc`        | REAL          | Probability-averaged basecall quality. |
+| `q_ld`        | REAL          | Levenshtein quality vs Target.         |
+| `ER`          | TEXT          | End Reason (from `pod5 view`).         |
+
+### `Target` Table
+
+Stores the single target sequence for this database.
+
+| Column       | Type          | Description                    |
+| ------------ | ------------- | ------------------------------ |
+| `tgt_id`     | **TEXT (PK)** | Target Sequence ID (defline).  |
+| `tgt_refseq` | TEXT          | The Target Sequence content.   |
+| `tgt_reflen` | INT           | Length of the Target Sequence. |
 
 ### `Mods` Table
 
-| Column        | Type         | Description                        |
-| :------------ | :----------- | :--------------------------------- |
-| `mod_bitflag` | **INT (PK)** | Sum of modification flags ($2^n$). |
-| `mods`        | TEXT         | Modifications present.             |
+Static lookup table.
+
+| Column        | Type         | Description                   |
+| ------------- | ------------ | ----------------------------- |
+| `mod_bitflag` | **INT (PK)** | Sum of modification flags (). |
+| `mods`        | TEXT         | Modifications present.        |
 
 ### `Exp` Table
 
-| Column     | Type          | Description             |
-| :--------- | :------------ | :---------------------- |
-| `exp_id`   | **TEXT (PK)** | Experiment ID.          |
-| `exp_desc` | TEXT          | Experiment description. |
+Stores experiment metadata parsed from the `exp_id`.
 
-### `Refseq` Table
-
-| Column      | Type          | Description                      |
-| :---------- | :------------ | :------------------------------- |
-| `refseq_id` | **TEXT (PK)** | Reference Sequence ID (defline). |
-| `refseq`    | TEXT          | Reference Sequence.              |
-| `reflen`    | INT           | Reference Sequence Length.       |
+| Column         | Type          | Description              |
+| -------------- | ------------- | ------------------------ |
+| `exp_id`       | **TEXT (PK)** | Experiment ID.           |
+| `flow_cell_id` | TEXT          | Flow Cell Serial.        |
+| `sample_id`    | TEXT          | Sample ID (YYYYMMDD_XX). |
+| `exp_desc`     | TEXT          | Experiment description.  |
 
 ## Future Plans
 
 * **Script Renaming**: Removing `.py` extensions for cleaner CLI usage.
-* **Query Scripts**: Developing scripts to query the database for specific metrics and data extraction.
-* **Database Merging**: Tools to merge multiple experiment databases into a single master database.
-* **Plotting**: Visualization scripts to generate reports directly from database queries.
+* **Database Merging**: Scripts to merge multiple Per-Target databases into a Per-Experiment database.
+* **Multithreading**: Parallel creation of DBs based on a config file.
+* **Querying & Plotting**: Post-hoc SQL analysis scripts to filter reads and generate reports.
