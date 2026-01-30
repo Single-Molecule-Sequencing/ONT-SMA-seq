@@ -11,6 +11,84 @@ import edlib
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from typing import Tuple, Any
+
+
+#########
+# funcs #
+#########
+
+def parse_bam_filename(bam_path: Path) -> Tuple[str, str, int, int]:
+	"""
+	Parses metadata from BAM filename (Right-to-Left parsing).
+	Expected Format: {exp_id}_{tier}_v{ver}_{trim}_{mods}.bam
+	"""
+	filename = bam_path.resolve().stem
+	parts = filename.split('_')
+
+	if len(parts) < 5:
+		sys.exit(f"[ingest] Error: Metadata parse failed for '{filename}'.")
+
+	try:
+		# Parse from right to left to handle underscores in exp_id
+		mods = int(parts[-1])
+		trim = int(parts[-2][-1])  # 'trim0' -> 0
+		ver_str = parts[-3].lstrip("v")
+		tier = parts[-4]
+		return tier, ver_str, trim, mods
+	except Exception as e:
+		sys.exit(f"[ingest] Error: Metadata parse failed for '{filename}'. {e}")
+
+
+def calculate_q_bc(quality_scores: Any) -> float:
+	"""Calculates probability-averaged Phred quality score."""
+	if len(quality_scores) == 0:
+		return 0.0
+
+	q_arr = np.array(quality_scores, dtype=np.float64)
+	probs = np.power(10, -q_arr / 10.0)
+	avg_prob = np.mean(probs)
+
+	if avg_prob > 0:
+		return -10 * math.log10(avg_prob)
+	return 0.0
+
+
+def calculate_q_ld(ed: int, ref_len: int) -> float:
+	"""
+	Calculates Levenshtein Quality.
+	Formula: -10 * log10( min( max(1/L^2, ed/L), 1 ) )
+	"""
+	if ref_len == 0:
+		return 0.0
+
+	L = float(ref_len)
+	term1 = 1.0 / (L * L)
+	term2 = float(ed) / L
+
+	# Bounded error probability
+	prob = min(max(term1, term2), 1.0)
+
+	return -10 * math.log10(prob)
+
+
+def insert_target(cursor: sqlite3.Cursor, tgt_id: str, tgt_seq: str, tgt_len: int) -> None:
+	"""Inserts target sequence metadata. strictly DB IO."""
+	cursor.execute('''
+		INSERT OR REPLACE INTO Target (tgt_id, tgt_refseq, tgt_reflen)
+		VALUES (?, ?, ?)
+	''', (tgt_id, tgt_seq, tgt_len))
+
+
+def insert_read(cursor: sqlite3.Cursor, data: Tuple) -> None:
+	"""Inserts a single processed read record."""
+	cursor.execute('''
+		INSERT OR IGNORE INTO Reads (
+			uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
+			model_tier, model_ver, trim, mod_bitflag,
+			ed, q_bc, q_ld, ER
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	''', data)
 
 
 ############
@@ -19,26 +97,23 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Ingest BAM, calculate metrics, and populate DB")
 parser.add_argument("-e", "--expid", required=True,
-	help="Experiment ID (used for tagging and logic)")
+	help="Experiment ID")
 parser.add_argument("-b", "--bam", required=True,
-	help="Path to input uBAM file")
+	help="Input uBAM file")
 parser.add_argument("-s", "--summary", required=True,
-	help="Path to input Pod5 summary TSV")
+	help="Pod5 summary TSV")
 parser.add_argument("-r", "--ref", required=True,
-	help="Path to Reference FASTA")
+	help="Target FASTA")
 parser.add_argument("-d", "--database", required=True,
-	help="Path to target SQLite database file")
+	help="Target SQLite DB")
 parser.add_argument("-o", "--output_bam", required=True,
-	help="Path to output tagged BAM file")
-parser.add_argument("-k", "--tolerance", type=int, default=150,
-	help="Length tolerance +/- bp for RefSeq matching [%(default)s]")
-
+	help="Output tagged BAM")
 args = parser.parse_args()
 
 
-##########
-# config #
-##########
+#########
+# param #
+#########
 
 EXP_ID = args.expid
 INPUT_BAM = Path(args.bam)
@@ -46,232 +121,114 @@ SUMMARY_TSV = Path(args.summary)
 REF_FASTA = Path(args.ref)
 DB_PATH = Path(args.database)
 OUTPUT_BAM = Path(args.output_bam)
-TOLERANCE = args.tolerance
 
-# Validate Inputs
-if not INPUT_BAM.exists():
-	sys.exit(f"[ingest] Error: BAM file {INPUT_BAM} not found.")
-if not SUMMARY_TSV.exists():
-	sys.exit(f"[ingest] Error: Summary TSV {SUMMARY_TSV} not found.")
-if not REF_FASTA.exists():
-	sys.exit(f"[ingest] Error: Reference FASTA {REF_FASTA} not found.")
-if not DB_PATH.exists():
-	sys.exit(f"[ingest] Error: Database {DB_PATH} not found. Run mkdb.py first.")
+MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG = parse_bam_filename(INPUT_BAM)
 
-# Ensure Output directory exists
-if not OUTPUT_BAM.parent.exists():
-	print(f"[ingest] Creating output directory: {OUTPUT_BAM.parent}")
-	OUTPUT_BAM.parent.mkdir(parents=True, exist_ok=True)
-
-print(f"[ingest] Starting ingestion for Experiment: {EXP_ID}")
-print(f"[ingest] Length Tolerance (-k): +/- {TOLERANCE} bp")
+print(f"[ingest] Run Metadata:\n  Exp: {EXP_ID}\n  Tier: {MODEL_TIER}\n  Ver: {MODEL_VER}\n  Trim: {TRIM}\n  Mods: {MOD_BITFLAG}")
 
 
-#################
-# DB Connection #
-#################
+########
+# main #
+########
 
-conn = sqlite3.connect(DB_PATH)
-c = conn.cursor()
-# Performance tuning for bulk inserts
-c.execute("PRAGMA synchronous = OFF")
-c.execute("PRAGMA journal_mode = MEMORY")
+tgt_id = None
+tgt_seq_parts = []
 
-
-#####################
-# Load Metadata TSV #
-#####################
-
-print(f"[ingest] Loading metadata from {SUMMARY_TSV}...")
-# Use pandas for fast C-engine parsing
-meta_df = pd.read_csv(SUMMARY_TSV, sep='\t')
-
-# QC: Check uniqueness
-if not meta_df['read_id'].is_unique:
-	print(f"[ingest] Warning: Found {meta_df['read_id'].duplicated().sum()} duplicates in TSV. Dropping duplicates.")
-	meta_df = meta_df.drop_duplicates(subset='read_id')
-
-# Convert to Dictionary for O(1) Lookup: {read_id: end_reason}
-meta_lookup = pd.Series(
-	meta_df.end_reason.values,
-	index=meta_df.read_id
-).to_dict()
-
-print(f"[ingest] Loaded metadata for {len(meta_lookup)} reads.")
-
-
-#########################
-# Parse Reference FASTA #
-#########################
-
-print(f"[ingest] Parsing Reference FASTA: {REF_FASTA}")
-
-# Store RefSeq info: {id: {'seq': str, 'len': int, 'range': (min, max)}}
-ref_data = {}
-
-with pysam.FastaFile(str(REF_FASTA)) as fa:
-	for ref_name in fa.references:
-		seq = fa.fetch(ref_name).upper()
-		length = len(seq)
-
-		# Range logic: Length +/- TOLERANCE
-		min_len = length - TOLERANCE
-		max_len = length + TOLERANCE
-
-		ref_data[ref_name] = {
-			'seq': seq,
-			'len': length,
-			'range': (min_len, max_len)
-		}
-
-		# DB Action: Insert into Refseq table
-		c.execute("INSERT OR REPLACE INTO Refseq (refseq_id, refseq, reflen) VALUES (?, ?, ?)",
-				  (ref_name, seq, length))
-
-conn.commit()
-print(f"[ingest] Loaded {len(ref_data)} references.")
-
-
-###########################
-# Parse BAM Filename Meta #
-###########################
-
-print(f"[ingest] Processing BAM: {INPUT_BAM.name}")
-
-filename_root = INPUT_BAM.stem # removes .bam extension
-parts = filename_root.split("_")
-
-# Convention: ... {tier}_{ver}_{trim}_{mods}
 try:
-	mods = int(parts[-1])
-	trim = int(parts[-2][-1])
-	ver_str = parts[-3].lstrip("v") # "5.2.0"
-	tier = parts[-4]
-
-	# Clean version string for ID generation (remove dots)
-	ver_clean = ver_str.replace(".", "")
-
-except (IndexError, ValueError) as e:
-	sys.exit(f"[ingest] Error parsing metadata from filename {INPUT_BAM.name}: {e}")
-
-print(f"[ingest] BAM metadata:\ntier - [{tier}]\nver  - [{ver_str}]\ntrim - [{trim}]\nmods - [{mods}]")
-
-print(f"[ingest] Processed BAM filename metadata")
-
-
-########################
-# Main Processing Loop #
-########################
-
-# Prepared Statements for Speed
-insert_sql = '''
-	INSERT INTO Reads (
-		uniq_id, exp_id, refseq_id, read_id, readseq, readlen,
-		model_tier, model_ver, trim, mod_bitflag,
-		ed, q_bc, q_ld, ER
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-'''
-
-# Counters
-count_total = 0
-count_tagged = 0
-count_mapped = 0
-
-print(f"[ingest] Ingesting Reads into {DB_PATH} and writing tagged BAM to {OUTPUT_BAM}...")
-
-with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as in_bam, \
-	 pysam.AlignmentFile(OUTPUT_BAM, "wb", template=in_bam) as out_bam:
-
-	for read in in_bam:
-		count_total += 1
-
-		# A. Get basic read info
-		r_id = read.query_name
-		seq = read.query_sequence
-
-		if not seq:
-			continue
-
-		r_len = len(seq)
-
-		# B. End Reason Lookup & Tagging
-		er_val = meta_lookup.get(r_id, "unknown")
-		read.set_tag("ER", er_val, value_type="Z")
-		count_tagged += 1
-
-		# C. RefSeq Logic (Length-based matching)
-		assigned_ref_id = None
-
-		# Check against loaded references
-		for ref_id, data in ref_data.items():
-			min_l, max_l = data['range']
-			if min_l <= r_len <= max_l:
-				assigned_ref_id = ref_id
-				break
-
-		# D. Metrics Calculation
-
-		# 1. q_bc (Basecall Quality)
-		q_scores = read.query_qualities
-		if q_scores:
-			# Safe conversion
-			q_arr = np.array(q_scores, dtype=np.float64)
-
-			# Vectorized calculation
-			probs = np.power(10, -q_arr / 10.0)
-			avg_prob = np.mean(probs)
-
-			# Avoid log(0) error
-			if avg_prob > 0:
-				q_bc = -10 * math.log10(avg_prob)
+	with open(REF_FASTA, 'r') as f:
+		for line in f:
+			line = line.strip()
+			if not line: continue
+			if line.startswith('>'):
+				tgt_id = line[1:]
 			else:
-				q_bc = 0.0
-		else:
-			q_bc = 0.0
+				tgt_seq_parts.append(line)
 
-		# 2. Alignment Metrics (ed, q_ld)
-		ed = None
-		q_ld = None
+	tgt_seq = "".join(tgt_seq_parts)
+	if not tgt_id or not tgt_seq:
+		raise ValueError("Empty ID or Sequence")
 
-		if assigned_ref_id:
-			count_mapped += 1
-			ref_seq = ref_data[assigned_ref_id]['seq']
-			ref_len = ref_data[assigned_ref_id]['len']
+	tgt_len = len(tgt_seq)
+	print(f"[ingest] Target Loaded: {tgt_id} ({tgt_len} bp)")
 
-			result = edlib.align(seq, ref_seq, mode="NW", task="distance")
-			ed = result["editDistance"]
+except Exception as e:
+	sys.exit(f"[ingest] Error loading FASTA: {e}")
 
-			# q_ld calculation
-			L = float(ref_len)
-			term1 = 1.0 / (L * L)
-			term2 = float(ed) / L
-			inner_max = max(term1, term2)
-			bounded_val = min(inner_max, 1.0)
-			q_ld = -10 * math.log10(bounded_val)
+print(f"[ingest] Loading Pod5 Summary from {SUMMARY_TSV}...")
 
-		# E. Unique ID Construction
-		# Format: {exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_id}
-		uniq_id = f"{EXP_ID}{tier}{ver_clean}t{trim}m{mods}_{r_id}"
+try:
+	summary_df = pd.read_csv(SUMMARY_TSV, sep='\t', usecols=['read_id', 'end_reason'])
+	end_reason_map = pd.Series(summary_df.end_reason.values, index=summary_df.read_id).to_dict()
+	print(f"[ingest] Loaded {len(end_reason_map)} records.")
+except Exception as e:
+	sys.exit(f"[ingest] Error loading summary TSV: {e}")
 
-		# F. DB Insertion
-		row_data = (
-			uniq_id, EXP_ID, assigned_ref_id, r_id, seq, r_len,
-			tier, ver_str, trim, mods,
-			ed, q_bc, q_ld, er_val
-		)
+with sqlite3.connect(DB_PATH) as conn:
+	c = conn.cursor()
 
-		c.execute(insert_sql, row_data)
-		out_bam.write(read)
+	insert_target(c, tgt_id, tgt_seq, tgt_len)
+	conn.commit()
+	save_verbosity = pysam.set_verbosity(0)
 
-# Cleanup
-conn.commit()
-conn.close()
+	with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as bam_in, \
+			pysam.AlignmentFile(OUTPUT_BAM, "wb", template=bam_in) as bam_out:
 
-print(f"[ingest] Ingested Reads into {DB_PATH} and wrote tagged BAM to {OUTPUT_BAM}")
+		pysam.set_verbosity(save_verbosity)
+		print("[ingest] Processing reads...")
+
+		count_total = 0
+		count_processed = 0
+		count_skipped = 0
+		count_unknown_er = 0
+
+		for read in bam_in:
+			count_total += 1
+			seq = read.query_sequence
+			quals = read.query_qualities
+
+			if not seq or not quals:
+				count_skipped += 1
+				continue
+
+			read_id = read.query_name
+			read_len = len(seq)
+
+			# Metrics
+			q_bc = calculate_q_bc(quals)
+
+			# Alignment
+			align_res = edlib.align(seq, tgt_seq, mode="NW", task="distance")
+			ed = align_res["editDistance"]
+			q_ld = calculate_q_ld(ed, tgt_len)
+
+			# Metadata
+			er_val = end_reason_map.get(read_id, "unknown")
+			if er_val == "unknown":
+				count_unknown_er += 1
+			uniq_id = f"{EXP_ID}{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
+
+			# DB Insert
+			read_data = (
+				uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
+				MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
+				ed, q_bc, q_ld, er_val
+			)
+			insert_read(c, read_data)
+
+			# BAM Write
+			read.set_tag("ER", er_val, value_type="Z")
+			bam_out.write(read)
+
+			count_processed += 1
+			if count_processed % 1000 == 0:
+				print(f"  ...processed {count_processed} reads", end='\r')
+
+	conn.commit()
 
 print(f"[ingest] Complete.")
 print(f"  - Total Reads:  {count_total}")
-print(f"  - Tagged:       {count_tagged}")
-print(f"  - Ref Matches:  {count_mapped}")
+print(f"  - Processed:    {count_processed}")
+print(f"  - Skipped:      {count_skipped}")
+print(f"  - Unknown ER:   {count_unknown_er}")
 print(f"  - Output DB:    {DB_PATH}")
 print(f"  - Output BAM:   {OUTPUT_BAM}")
