@@ -27,9 +27,10 @@ args = parser.parse_args()
 
 exp_parts = args.expid.split('_')
 
-if len(exp_parts) >= 2:
+if len(exp_parts) >= 3:
 	flow_cell_id = exp_parts[0]
-	sample_id = "_".join(exp_parts[1:])
+	sample_id = exp_parts[1]
+	alias = exp_parts[-1]
 else:
 	sys.exit(f"[mkdb] Warning: Experiment ID '{args.expid}' does not follow 'FlowCell_Sample' convention.")
 
@@ -37,6 +38,7 @@ print(f"[mkdb] Parsed Experiment Metadata:")
 print(f"  - Exp ID:    {args.expid}")
 print(f"  - Flow Cell: {flow_cell_id}")
 print(f"  - Sample:    {sample_id}")
+print(f"  - Alias:     {alias}")
 
 
 ##########
@@ -96,6 +98,7 @@ c.execute('''
 		exp_id TEXT PRIMARY KEY,
 		flow_cell_id TEXT,
 		sample_id TEXT,
+		alias TEXT,
 		exp_desc TEXT
 	)
 ''')
@@ -131,8 +134,8 @@ c.executemany(
 
 # 2. Populate Exp (Dynamic based on args)
 c.execute(
-	"INSERT INTO Exp (exp_id, flow_cell_id, sample_id, exp_desc) VALUES (?, ?, ?, ?)",
-	(args.expid, flow_cell_id, sample_id, "Initialized via mkdb")
+	"INSERT INTO Exp (exp_id, flow_cell_id, sample_id, alias, exp_desc) VALUES (?, ?, ?, ?, ?)",
+	(args.expid, flow_cell_id, sample_id, alias, "Initialized via mkdb")
 )
 
 # --- Commit & Close ---

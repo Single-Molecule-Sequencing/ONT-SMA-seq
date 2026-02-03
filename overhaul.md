@@ -49,7 +49,7 @@ The pipeline is now restructured to operate on a **Per-Target Sequence** basis. 
 1. **Parse BAM Filename:** Extract metadata components (`exp_id`, `model`, `ver`, `trim`, `mods`).
 2. **Directory Setup:** Create `Input/` directory.
 3. **Symlink Inputs:**
-   1. BAM  `Input/reads.bam` (Simplified name since metadata is in DB).
+   1. BAM  `Input/reads.bam`
    2. Pod5 Dir  `Input/pod5/`
    3. RefSeq  `Input/target.fa`
 
@@ -116,7 +116,7 @@ The pipeline is now restructured to operate on a **Per-Target Sequence** basis. 
 
 ## **3. ID Construction & Metrics**
 
-**`uniq_id` Format:** `{exp_id}{tier}{ver}t{trim}m{mod_flag}_{read_hash}`
+**`uniq_id` Format:** `{exp_id}_{tier}{ver}t{trim}m{mod_flag}_{read_hash}`
 
 **Metric Formulas:**
 
@@ -162,12 +162,13 @@ The pipeline is now restructured to operate on a **Per-Target Sequence** basis. 
 
 **Exp** table
 
-| Column         | Type          | Description                               |
-| -------------- | ------------- | ----------------------------------------- |
-| `exp_id`       | **TEXT (PK)** | Experiment ID {flow_cell_id}_{sample_id}. |
-| `flow_cell_id` | TEXT          | Flow Cell ID.                             |
-| `sample_id`    | TEXT          | Library Prep Info YYYYMMDD_INITIALS.      |
-| `exp_desc`     | TEXT          | Experiment Description.                   |
+| Column         | Type          | Description                                         |
+| -------------- | ------------- | --------------------------------------------------- |
+| `exp_id`       | **TEXT (PK)** | Experiment ID. {flow_cell_id}\_{sample_id}\_{alias} |
+| `flow_cell_id` | TEXT          | Flow Cell ID.                                       |
+| `sample_id`    | TEXT          | Library Prep Info (YYYYMMDD-INITIALS).              |
+| `alias`        | TEXT          | Experiemnt Alias.                                   |
+| `exp_desc`     | TEXT          | Experiment description.                             |
 
 **Mods** table (Static Lookup)
 

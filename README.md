@@ -182,12 +182,13 @@ Static lookup table.
 
 Stores experiment metadata parsed from the `exp_id`.
 
-| Column         | Type          | Description              |
-| -------------- | ------------- | ------------------------ |
-| `exp_id`       | **TEXT (PK)** | Experiment ID.           |
-| `flow_cell_id` | TEXT          | Flow Cell Serial.        |
-| `sample_id`    | TEXT          | Sample ID (YYYYMMDD_XX). |
-| `exp_desc`     | TEXT          | Experiment description.  |
+| Column         | Type          | Description                                         |
+| -------------- | ------------- | --------------------------------------------------- |
+| `exp_id`       | **TEXT (PK)** | Experiment ID. {flow_cell_id}\_{sample_id}\_{alias} |
+| `flow_cell_id` | TEXT          | Flow Cell ID.                                       |
+| `sample_id`    | TEXT          | Library Prep Info (YYYYMMDD-INITIALS).              |
+| `alias`        | TEXT          | Experiemnt Alias.                                   |
+| `exp_desc`     | TEXT          | Experiment description.                             |
 
 ## Future Plans
 
