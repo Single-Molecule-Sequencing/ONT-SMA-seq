@@ -205,7 +205,7 @@ with sqlite3.connect(DB_PATH) as conn:
 			er_val = end_reason_map.get(read_id, "unknown")
 			if er_val == "unknown":
 				count_unknown_er += 1
-			uniq_id = f"{EXP_ID}{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
+			uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
 
 			# DB Insert
 			read_data = (
