@@ -59,6 +59,7 @@ old/
 *.tar.gz
 *.tgz
 *.zip
+*.db
 
 # Python / Conda / virtual env clutter
 __pycache__/
