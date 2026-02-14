@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}SMA-seq Barcode Calibration{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="viz-layout">
+    <aside class="viz-sidebar">
+      <header>
+        <strong>Barcode Calibration</strong>
+      </header>
+      <nav>
+        <a href="/" class="{% if active_page == 'overview' %}active{% endif %}">Overview</a>
+        <a href="/distributions" class="{% if active_page == 'distributions' %}active{% endif %}">Distributions</a>
+        <a href="/confidence" class="{% if active_page == 'confidence' %}active{% endif %}">Confidence</a>
+        <a href="/separation" class="{% if active_page == 'separation' %}active{% endif %}">Separation</a>
+        <a href="/thresholds" class="{% if active_page == 'thresholds' %}active{% endif %}">Thresholds</a>
+        <a href="/compare" class="{% if active_page == 'compare' %}active{% endif %}">Compare</a>
+      </nav>
+      <footer>
+        <small>{% block sidebar_footer %}{% if db_names %}
+          {% if db_names|length == 1 %}
+            {{ db_names[0] }}
+          {% else %}
+            <label for="db-select">Database:</label>
+            <select id="db-select" onchange="window.currentDb = this.value">
+              {% for name in db_names %}
+              <option value="{{ loop.index0 }}">{{ name }}</option>
+              {% endfor %}
+            </select>
+          {% endif %}
+        {% endif %}{% endblock %}</small>
+      </footer>
+    </aside>
+    <main class="viz-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    window.currentDb = 0;
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

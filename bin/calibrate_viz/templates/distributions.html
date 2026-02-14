@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Distributions - SMA-seq Barcode Calibration{% endblock %}
+{% block head %}
+<script src="/static/distributions.js"></script>
+{% endblock %}
+
+{% block content %}
+<h2>Read Distributions</h2>
+
+<div class="group-tabs" id="group-tabs">
+  <button class="active" data-group="">All</button>
+  <button data-group="barcode">Per-barcode</button>
+  <button data-group="target">Per-target</button>
+  <button data-group="end_reason">Per-end_reason</button>
+</div>
+
+<h3>Signal Duration</h3>
+<div id="signal-kde" class="kde-container"></div>
+<div id="signal-er-subplot" class="kde-container"></div>
+
+<h3>Read Length</h3>
+<div id="readlen-kde" class="kde-container"></div>
+<div id="readlen-er-subplot" class="kde-container"></div>
+
+<div id="threshold-stats" class="threshold-stats">
+  <p>Drag a threshold line to see classification statistics.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const groupTabs = document.getElementById('group-tabs');
+  let currentGroup = '';
+
+  function getDbIndex() {
+    return window.currentDb || 0;
+  }
+
+  function loadDistributions(groupBy) {
+    const db = getDbIndex();
+
+    // Signal duration KDE
+    const signalParams = new URLSearchParams({
+      column: 'signal_duration_s',
+      db: db,
+    });
+    if (groupBy) signalParams.set('group_by', groupBy);
+
+    fetch('/api/distributions?' + signalParams)
+      .then(r => r.json())
+      .then(data => {
+        renderKDE('signal-kde', data, {
+          xlabel: 'Signal Duration (s)',
+          ylabel: 'Density',
+          column: 'signal_duration_s',
+          groupBy: groupBy,
+          thresholds: [],
+          expectedSizes: [],
+        });
+      });
+
+    // Read length KDE
+    const readlenParams = new URLSearchParams({
+      column: 'readlen',
+      db: db,
+    });
+    if (groupBy) readlenParams.set('group_by', groupBy);
+
+    fetch('/api/distributions?' + readlenParams)
+      .then(r => r.json())
+      .then(data => {
+        renderKDE('readlen-kde', data, {
+          xlabel: 'Read Length (bp)',
+          ylabel: 'Density',
+          column: 'readlen',
+          groupBy: groupBy,
+          thresholds: [
+            { value: 200, label: 'Min length', color: '#e53935', statsTarget: 'threshold-stats' },
+          ],
+          expectedSizes: [],
+        });
+      });
+
+    // End reason subplots (only when not already grouping by end_reason)
+    if (groupBy !== 'end_reason') {
+      const erSignalParams = new URLSearchParams({
+        column: 'signal_duration_s',
+        group_by: 'end_reason',
+        db: db,
+      });
+      fetch('/api/distributions?' + erSignalParams)
+        .then(r => r.json())
+        .then(data => {
+          renderEndReasonSubplot('signal-er-subplot', data, null);
+        });
+
+      const erReadlenParams = new URLSearchParams({
+        column: 'readlen',
+        group_by: 'end_reason',
+        db: db,
+      });
+      fetch('/api/distributions?' + erReadlenParams)
+        .then(r => r.json())
+        .then(data => {
+          renderEndReasonSubplot('readlen-er-subplot', data, null);
+        });
+    } else {
+      document.getElementById('signal-er-subplot').innerHTML = '';
+      document.getElementById('readlen-er-subplot').innerHTML = '';
+    }
+  }
+
+  // Tab click handlers
+  groupTabs.addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    groupTabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    currentGroup = e.target.dataset.group;
+    loadDistributions(currentGroup);
+  });
+
+  // DB selector change
+  const dbSelect = document.getElementById('db-select');
+  if (dbSelect) {
+    dbSelect.addEventListener('change', function() {
+      loadDistributions(currentGroup);
+    });
+  }
+
+  // Initial load
+  loadDistributions(currentGroup);
+})();
+</script>
+{% endblock %}
