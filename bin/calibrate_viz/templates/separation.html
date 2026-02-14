@@ -1,6 +1,123 @@
 {% extends "base.html" %}
 {% block title %}Separation - SMA-seq Barcode Calibration{% endblock %}
+{% block head %}
+<script src="/static/separation.js"></script>
+{% endblock %}
+
 {% block content %}
 <h2>Barcode Separation</h2>
-<p>Coming in Task 8: Barcode separation heatmap and pairwise distance analysis.</p>
+
+<p>Pairwise edit distances between barcodes and per-barcode separation metrics.
+Low pairwise distance (red) indicates barcodes that may be confused; high distance (green) indicates good separation.</p>
+
+<h3>Pairwise Edit Distance Heatmap</h3>
+<div id="heatmap-container" class="kde-container" style="overflow-x: auto;"></div>
+
+<h3>Per-Barcode Separation Metrics</h3>
+<div id="metrics-table" class="kde-container"></div>
+
+<h3>Barcode Detail</h3>
+<div id="barcode-detail" class="threshold-stats">
+  <p>Click a barcode in the table or heatmap cell to see details.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  function getDbIndex() {
+    return window.currentDb || 0;
+  }
+
+  function loadSeparationData() {
+    const db = getDbIndex();
+
+    // Load pairwise distances
+    fetch('/api/separation/pairwise?db=' + db)
+      .then(r => r.json())
+      .then(data => {
+        renderHeatmap('heatmap-container', data);
+      })
+      .catch(err => {
+        document.getElementById('heatmap-container').innerHTML =
+          '<p>Error loading pairwise distances: ' + err.message + '</p>';
+      });
+
+    // Load separation metrics
+    fetch('/api/separation/metrics?db=' + db)
+      .then(r => r.json())
+      .then(data => {
+        renderSeparationTable('metrics-table', data);
+      })
+      .catch(err => {
+        document.getElementById('metrics-table').innerHTML =
+          '<p>Error loading separation metrics: ' + err.message + '</p>';
+      });
+  }
+
+  // Listen for barcode-click events from the heatmap
+  document.addEventListener('barcode-click', function(e) {
+    const detail = e.detail;
+    const panel = document.getElementById('barcode-detail');
+    panel.innerHTML =
+      '<h4>' + detail.barcodeA + ' vs ' + detail.barcodeB + '</h4>' +
+      '<table>' +
+      '<tr><td><strong>Edit distance</strong></td><td>' + detail.distance + '</td></tr>' +
+      '</table>';
+  });
+
+  // Listen for barcode-select events from the metrics table
+  document.addEventListener('barcode-select', function(e) {
+    const barcode = e.detail.barcode;
+    const db = getDbIndex();
+    const panel = document.getElementById('barcode-detail');
+    panel.innerHTML = '<p>Loading details for <strong>' + barcode + '</strong>...</p>';
+
+    // Load distribution for this barcode
+    fetch('/api/distributions?column=readlen&group_by=bc_start_id&db=' + db)
+      .then(r => r.json())
+      .then(data => {
+        const groups = data.groups || {};
+        if (groups[barcode]) {
+          const bcData = groups[barcode];
+          panel.innerHTML =
+            '<h4>' + barcode + '</h4>' +
+            '<table>' +
+            '<tr><td><strong>Read count</strong></td><td>' + bcData.count.toLocaleString() + '</td></tr>' +
+            '</table>' +
+            '<div id="barcode-detail-kde"></div>';
+          // Render a small KDE just for this barcode
+          const singleGroup = { groups: {}, peaks: {} };
+          singleGroup.groups[barcode] = bcData;
+          if (data.peaks && data.peaks[barcode]) {
+            singleGroup.peaks[barcode] = data.peaks[barcode];
+          }
+          if (typeof renderKDE === 'function') {
+            renderKDE('barcode-detail-kde', singleGroup, {
+              xlabel: 'Read Length (bp)',
+              ylabel: 'Density',
+              column: 'readlen',
+            });
+          }
+        } else {
+          panel.innerHTML = '<p>No distribution data available for <strong>' + barcode + '</strong>.</p>';
+        }
+      })
+      .catch(err => {
+        panel.innerHTML = '<p>Error loading details: ' + err.message + '</p>';
+      });
+  });
+
+  // DB selector change
+  const dbSelect = document.getElementById('db-select');
+  if (dbSelect) {
+    dbSelect.addEventListener('change', function() {
+      loadSeparationData();
+    });
+  }
+
+  // Initial load
+  loadSeparationData();
+})();
+</script>
 {% endblock %}
