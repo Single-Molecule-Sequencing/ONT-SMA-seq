@@ -65,6 +65,21 @@ Wrapper for `pod5 view`. Extracts End Reason metadata required for the DB.
 python3 bin/extractMeta.py -i <PATH_TO_INPUT_DIR> -o <PATH_TO_OUTPUT_TSV>
 ```
 
+### `prepare.py`
+
+Discovers MinKNOW runs, merges POD5/BAM data, initializes the database, aligns all reads against target references, and generates diagnostic QC plots.
+
+* `-d`, `--expdir`: Path to experiment directory (Required).
+* `-e`, `--expid`: Experiment ID (Required).
+* `-r`, `--ref`: Multi-sequence FASTA with target sequences (Required).
+* `-o`, `--outdir`: Output directory (Default: `Output`).
+* `--force-rebasecall`: Always re-basecall from POD5.
+* `--dry-run`: Print merge plan without executing.
+
+```bash
+python3 bin/prepare.py -d /path/to/experiment -e EXP_ID -r targets.fa -o Output/
+```
+
 ### `ingest.py`
 
 Calculates metrics and ingests data. Requires the database created by `mkdb.py`.
