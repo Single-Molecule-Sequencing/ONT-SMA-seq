@@ -60,3 +60,38 @@ class TestCigarMetrics:
         m = compute_cigar_metrics("5=2D3=", ref_len=10, read_len=8)
         assert m["max_del"] == 2
         assert m["ref_coverage"] == pytest.approx(0.8)  # 8 ref bases covered by alignment matches
+
+
+class TestSegmentedMetrics:
+    """Test metrics computed within 5'/mid/3' reference segments."""
+
+    def test_perfect_match_all_segments_identical(self):
+        from align import compute_segmented_metrics
+        # 30bp perfect match, ref_len=30 -> segments at 10, 20
+        segs = compute_segmented_metrics("30=", ref_len=30)
+        for seg in ["five_prime", "middle", "three_prime"]:
+            assert segs[f"{seg}_identity"] == 1.0
+            assert segs[f"{seg}_contiguity"] == 10
+            assert segs[f"{seg}_gap_count"] == 0
+
+    def test_mismatch_in_five_prime(self):
+        from align import compute_segmented_metrics
+        # First 10bp of ref: 3=1X6= -> 5' segment has identity 9/10
+        segs = compute_segmented_metrics("3=1X6=10=10=", ref_len=30)
+        assert segs["five_prime_identity"] == pytest.approx(0.9)
+        assert segs["middle_identity"] == 1.0
+        assert segs["three_prime_identity"] == 1.0
+
+    def test_insertion_in_middle(self):
+        from align import compute_segmented_metrics
+        # ref positions 0-9 perfect, 10-19 has a 3bp insertion, 20-29 perfect
+        segs = compute_segmented_metrics("10=5=3I5=10=", ref_len=30)
+        assert segs["five_prime_gap_count"] == 0
+        assert segs["middle_gap_count"] == 1
+        assert segs["three_prime_gap_count"] == 0
+
+    def test_contiguity_broken_by_deletion(self):
+        from align import compute_segmented_metrics
+        # 5' segment: 4=2D4= -> contiguity = 4 (longest run without gap)
+        segs = compute_segmented_metrics("4=2D4=10=10=", ref_len=30)
+        assert segs["five_prime_contiguity"] == 4

@@ -64,3 +64,73 @@ def compute_cigar_metrics(cigar: str, ref_len: int, read_len: int) -> dict:
         "max_del": max_del,
         "n_sig_indels": n_sig_indels,
     }
+
+
+def compute_segmented_metrics(cigar: str, ref_len: int) -> dict:
+    """Compute identity/contiguity/gap_count within 5', middle, 3' reference thirds.
+
+    Walks the CIGAR, tracking the current reference position to assign each
+    operation to the appropriate segment.
+    """
+    seg1_end = ref_len // 3
+    seg2_end = 2 * ref_len // 3
+    seg_len = [seg1_end, seg2_end - seg1_end, ref_len - seg2_end]
+
+    # Per-segment accumulators
+    seg_matches = [0, 0, 0]
+    seg_mismatches = [0, 0, 0]
+    seg_gap_count = [0, 0, 0]
+    seg_contiguity = [0, 0, 0]
+    seg_current_run = [0, 0, 0]
+
+    def _seg_index(ref_pos: int) -> int:
+        if ref_pos < seg1_end:
+            return 0
+        elif ref_pos < seg2_end:
+            return 1
+        else:
+            return 2
+
+    ref_pos = 0
+    ops = parse_cigar(cigar)
+
+    for op, length in ops:
+        if op in ("=", "M"):
+            for _ in range(length):
+                if ref_pos < ref_len:
+                    s = _seg_index(ref_pos)
+                    seg_matches[s] += 1
+                    seg_current_run[s] += 1
+                    seg_contiguity[s] = max(seg_contiguity[s], seg_current_run[s])
+                ref_pos += 1
+        elif op == "X":
+            for _ in range(length):
+                if ref_pos < ref_len:
+                    s = _seg_index(ref_pos)
+                    seg_mismatches[s] += 1
+                    seg_current_run[s] = 0
+                ref_pos += 1
+        elif op == "I":
+            # Insertion: ref_pos doesn't advance. Assign to current segment.
+            if ref_pos < ref_len:
+                s = _seg_index(ref_pos)
+            else:
+                s = 2
+            seg_gap_count[s] += 1
+            seg_current_run[s] = 0
+        elif op == "D":
+            for i in range(length):
+                if ref_pos < ref_len:
+                    s = _seg_index(ref_pos)
+                    if i == 0:  # count deletion event once per segment
+                        seg_gap_count[s] += 1
+                    seg_current_run[s] = 0
+                ref_pos += 1
+
+    names = ["five_prime", "middle", "three_prime"]
+    result = {}
+    for i, name in enumerate(names):
+        result[f"{name}_identity"] = seg_matches[i] / seg_len[i] if seg_len[i] > 0 else 0.0
+        result[f"{name}_contiguity"] = seg_contiguity[i]
+        result[f"{name}_gap_count"] = seg_gap_count[i]
+    return result
