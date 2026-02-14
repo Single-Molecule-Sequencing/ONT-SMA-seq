@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}SMA-seq Config Visualizer{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="viz-layout">
+    <aside class="viz-sidebar">
+      <header>
+        <strong>SMA-seq Config</strong>
+        <span hx-get="/api/validate/badge" hx-trigger="load" hx-swap="innerHTML"></span>
+      </header>
+      <nav>
+        <a href="/" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/sample-sheet" class="{% if active_page == 'sample_sheet' %}active{% endif %}">Sample Sheet</a>
+        <a href="/barcodes" class="{% if active_page == 'barcodes' %}active{% endif %}">Barcodes</a>
+        <a href="/construct" class="{% if active_page == 'construct' %}active{% endif %}">Construct</a>
+        <a href="/targets" class="{% if active_page == 'targets' %}active{% endif %}">Targets</a>
+        <a href="/assumptions" class="{% if active_page == 'assumptions' %}active{% endif %}">Assumptions</a>
+      </nav>
+      <footer>
+        <small>{{ experiment_dir_name }}</small>
+      </footer>
+    </aside>
+    <main class="viz-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

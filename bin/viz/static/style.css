@@ -1,0 +1,147 @@
+/* SMA-seq Config Visualizer styles */
+
+/* Layout */
+.viz-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.viz-sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid var(--pico-muted-border-color);
+    background: var(--pico-card-background-color);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+}
+
+.viz-sidebar header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.viz-sidebar nav {
+    flex: 1;
+}
+
+.viz-sidebar nav a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+    border-radius: 0.25rem;
+    text-decoration: none;
+    color: var(--pico-color);
+}
+
+.viz-sidebar nav a:hover {
+    background: var(--pico-muted-border-color);
+}
+
+.viz-sidebar nav a.active {
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+    font-weight: bold;
+}
+
+.viz-sidebar footer {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    color: var(--pico-muted-color);
+}
+
+/* Main content */
+.viz-main {
+    flex: 1;
+    padding: 2rem;
+}
+
+/* Validation badges */
+.badge-ok {
+    color: #2e7d32;
+    font-weight: bold;
+}
+
+.badge-error {
+    color: #c62828;
+    font-weight: bold;
+}
+
+/* Construct diagram region hover */
+.construct-region {
+    cursor: pointer;
+}
+
+.construct-region:hover {
+    opacity: 0.8;
+}
+
+/* Truncation color classes */
+.trunc-full {
+    color: #2e7d32;
+}
+
+.trunc-3prime {
+    color: #66bb6a;
+}
+
+.trunc-target {
+    color: #ef6c00;
+}
+
+.trunc-barcode {
+    color: #e65100;
+}
+
+.trunc-adapter {
+    color: #9e9e9e;
+}
+
+.trunc-chimeric {
+    color: #c62828;
+}
+
+/* Truncation label badge */
+.trunc-label {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.85em;
+    font-weight: 600;
+    background: var(--pico-muted-border-color);
+}
+
+/* Table actions */
+.table-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Inline form helper */
+.inline-form {
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Print media query - hide navigation */
+@media print {
+    .viz-sidebar {
+        display: none;
+    }
+
+    .viz-layout {
+        display: block;
+    }
+
+    .viz-main {
+        padding: 0;
+    }
+}

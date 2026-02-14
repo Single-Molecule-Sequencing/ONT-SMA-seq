@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SMA-seq Config Visualizer{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<article>
+  <header>Experiment</header>
+  <p><strong>Directory:</strong> {{ experiment_dir }}</p>
+  <p><strong>Description:</strong> {{ config.description or "Not set" }}</p>
+</article>
+<h2>File Status</h2>
+<div class="grid">
+  {% for name, exists in file_status.items() %}
+  <article>
+    <header>{{ name }}</header>
+    {% if exists %}<p class="badge-ok">Present</p>{% else %}<p class="badge-error">Missing</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+<h2>Quick Actions</h2>
+<div class="grid">
+  <button hx-post="/api/export" hx-swap="outerHTML">Export Static HTML</button>
+</div>
+{% endblock %}
