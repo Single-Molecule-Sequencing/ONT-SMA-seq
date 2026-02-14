@@ -212,3 +212,68 @@ class TestClassifyRead:
         assert len(result["pairwise"]) == 2
         assert result["pairwise"][0]["rank"] == 1
         assert result["pairwise"][1]["rank"] == 2
+
+
+from pathlib import Path
+
+
+def _make_test_bam(tmp_path: Path, sequences: dict[str, str]) -> Path:
+    """Create a minimal unaligned BAM with given {read_id: sequence} pairs."""
+    import pysam
+    bam_path = tmp_path / "test.bam"
+    header = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6", "SO": "unknown"}})
+    with pysam.AlignmentFile(str(bam_path), "wb", header=header) as f:
+        for rid, seq in sequences.items():
+            a = pysam.AlignedSegment(header)
+            a.query_name = rid
+            a.query_sequence = seq
+            a.query_qualities = pysam.qualitystring_to_array("I" * len(seq))
+            a.flag = 4  # unmapped
+            f.write(a)
+    return bam_path
+
+
+class TestProcessBam:
+    """Test BAM streaming + TSV output."""
+
+    def test_writes_alignments_tsv(self, tmp_path):
+        from align import process_bam
+        bam = _make_test_bam(tmp_path, {"r1": "ACGTACGT", "r2": "TTTTTTTT"})
+        refs = {"t1": "ACGTACGT", "t2": "TTTTTTTT"}
+        align_tsv = tmp_path / "alignments.tsv"
+        class_tsv = tmp_path / "classification.tsv"
+        process_bam(bam, refs, align_tsv, class_tsv)
+        assert align_tsv.exists()
+        lines = align_tsv.read_text().strip().split("\n")
+        assert len(lines) == 5  # header + 2 reads * 2 refs
+
+    def test_writes_classification_tsv(self, tmp_path):
+        from align import process_bam
+        bam = _make_test_bam(tmp_path, {"r1": "ACGTACGT"})
+        refs = {"t1": "ACGTACGT", "t2": "TTTTTTTT"}
+        align_tsv = tmp_path / "alignments.tsv"
+        class_tsv = tmp_path / "classification.tsv"
+        process_bam(bam, refs, align_tsv, class_tsv)
+        assert class_tsv.exists()
+        lines = class_tsv.read_text().strip().split("\n")
+        assert len(lines) == 2  # header + 1 read
+        assert "t1" in lines[1]  # assigned to perfect match
+
+    def test_end_reason_included_when_tagged(self, tmp_path):
+        from align import process_bam
+        import pysam
+        bam_path = tmp_path / "tagged.bam"
+        header = pysam.AlignmentHeader.from_dict({"HD": {"VN": "1.6"}})
+        with pysam.AlignmentFile(str(bam_path), "wb", header=header) as f:
+            a = pysam.AlignedSegment(header)
+            a.query_name = "r1"
+            a.query_sequence = "ACGT"
+            a.query_qualities = pysam.qualitystring_to_array("IIII")
+            a.flag = 4
+            a.set_tag("er", "signal_positive", "Z")
+            f.write(a)
+        refs = {"t1": "ACGT"}
+        class_tsv = tmp_path / "class.tsv"
+        process_bam(bam_path, refs, tmp_path / "align.tsv", class_tsv)
+        content = class_tsv.read_text()
+        assert "signal_positive" in content

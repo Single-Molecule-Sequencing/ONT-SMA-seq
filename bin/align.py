@@ -331,3 +331,93 @@ def classify_read(
         "confidence_flag": flag,
         "pairwise": pairwise,
     }
+
+
+import csv
+from pathlib import Path
+
+import pysam
+
+
+def parse_fasta(fasta_path: Path) -> dict[str, str]:
+    """Parse a FASTA file into {header: sequence} dict."""
+    refs: dict[str, str] = {}
+    current_id = None
+    current_seq: list[str] = []
+    with open(fasta_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if current_id is not None:
+                    refs[current_id] = "".join(current_seq)
+                current_id = line[1:].split()[0]
+                current_seq = []
+            else:
+                current_seq.append(line.upper())
+    if current_id is not None:
+        refs[current_id] = "".join(current_seq)
+    return refs
+
+
+def process_bam(
+    bam_path: Path,
+    refs: dict[str, str],
+    alignments_tsv: Path,
+    classification_tsv: Path,
+) -> int:
+    """Stream reads from BAM, align all-vs-all, write TSVs.
+
+    Returns the number of reads processed.
+    """
+    alignments_tsv.parent.mkdir(parents=True, exist_ok=True)
+    classification_tsv.parent.mkdir(parents=True, exist_ok=True)
+
+    class_fields = [
+        "read_id", "read_len", "assigned_ref",
+        "best_ned", "second_ned", "margin", "confidence_flag", "end_reason",
+    ]
+
+    n_processed = 0
+
+    with (
+        open(alignments_tsv, "w", newline="") as af,
+        open(classification_tsv, "w", newline="") as cf,
+        pysam.AlignmentFile(str(bam_path), check_sq=False) as bam,
+    ):
+        aw = csv.DictWriter(af, fieldnames=METRIC_COLUMNS, delimiter="\t", extrasaction="ignore")
+        aw.writeheader()
+        cw = csv.DictWriter(cf, fieldnames=class_fields, delimiter="\t")
+        cw.writeheader()
+
+        for read in bam:
+            seq = read.query_sequence
+            if seq is None:
+                continue
+
+            rid = read.query_name
+            result = classify_read(seq, rid, refs)
+
+            for pw in result["pairwise"]:
+                aw.writerow(pw)
+
+            er = ""
+            try:
+                er = read.get_tag("er")
+            except KeyError:
+                pass
+
+            cw.writerow({
+                "read_id": result["read_id"],
+                "read_len": result["read_len"],
+                "assigned_ref": result["assigned_ref"],
+                "best_ned": f"{result['best_ned']:.6f}",
+                "second_ned": f"{result['second_ned']:.6f}",
+                "margin": f"{result['margin']:.6f}",
+                "confidence_flag": result["confidence_flag"],
+                "end_reason": er,
+            })
+            n_processed += 1
+
+    return n_processed
