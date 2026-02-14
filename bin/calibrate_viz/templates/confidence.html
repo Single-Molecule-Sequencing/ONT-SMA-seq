@@ -1,6 +1,160 @@
 {% extends "base.html" %}
 {% block title %}Confidence - SMA-seq Barcode Calibration{% endblock %}
+{% block head %}
+<script src="/static/confidence.js"></script>
+{% endblock %}
+
 {% block content %}
 <h2>Confidence Analysis</h2>
-<p>Coming in Task 7: Confusion matrix and per-barcode confidence metrics.</p>
+
+<p>Explore barcode assignment confidence scores and tune classification thresholds interactively.
+Drag the threshold lines in the scatter plot to reclassify reads in real time.</p>
+
+<h3>bc_start_conf Distribution</h3>
+<div id="start-conf-kde" class="kde-container"></div>
+
+<h3>bc_end_conf Distribution</h3>
+<div id="end-conf-kde" class="kde-container"></div>
+
+<h3>Confidence Scatter (bc_start_conf vs bc_end_conf)</h3>
+<div id="conf-scatter" class="kde-container"></div>
+
+<div class="threshold-stats" id="threshold-panels">
+  <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 300px;">
+      <h4>Classification Counts</h4>
+      <div id="classify-table">
+        <p>Drag thresholds above to see reclassification.</p>
+      </div>
+    </div>
+    <div style="flex: 1; min-width: 300px;">
+      <h4>Confusion Matrix</h4>
+      <div id="confusion-matrix"
+           hx-get="/api/confusion-matrix?db=0"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 1rem;">
+    <h4>Affected Reads</h4>
+    <div id="affected-reads">
+      <p>Drag thresholds to see which reads change classification.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const DEFAULT_START_MIN = 0.6;
+  const DEFAULT_FL_THRESH = 0.75;
+
+  let currentStartMin = DEFAULT_START_MIN;
+  let currentFlThresh = DEFAULT_FL_THRESH;
+
+  function getDbIndex() {
+    return window.currentDb || 0;
+  }
+
+  function loadConfidenceData() {
+    const db = getDbIndex();
+
+    // Fetch scatter data
+    fetch(`/api/confidence?db=${db}`)
+      .then(r => r.json())
+      .then(data => {
+        // Render scatter
+        renderConfidenceScatter('conf-scatter', data, {
+          xlabel: 'bc_start_conf',
+          ylabel: 'bc_end_conf',
+          startThreshold: currentStartMin,
+          flThreshold: currentFlThresh,
+          onThresholdChange: onThresholdDrag,
+        });
+
+        // Build KDE for start_conf grouped by trunc_level
+        if (data.start_kde) {
+          renderConfidenceKDE('start-conf-kde', data.start_kde, {
+            xlabel: 'bc_start_conf',
+            ylabel: 'Density',
+            thresholds: [
+              { value: currentStartMin, label: 'start_min', color: '#e53935' },
+            ],
+          });
+        }
+
+        // Build KDE for end_conf grouped by trunc_level
+        if (data.end_kde) {
+          renderConfidenceKDE('end-conf-kde', data.end_kde, {
+            xlabel: 'bc_end_conf',
+            ylabel: 'Density',
+            thresholds: [
+              { value: currentFlThresh, label: 'fl_thresh', color: '#1565c0' },
+            ],
+          });
+        }
+      });
+
+    // Load initial classification table
+    loadClassifyTable(currentStartMin, currentFlThresh);
+  }
+
+  function onThresholdDrag(startMin, flThresh) {
+    const oldStartMin = currentStartMin;
+    const oldFlThresh = currentFlThresh;
+    currentStartMin = startMin;
+    currentFlThresh = flThresh;
+
+    // Update classification table via HTMX
+    loadClassifyTable(startMin, flThresh);
+
+    // Load affected reads
+    loadAffectedReads(oldStartMin, oldFlThresh, startMin, flThresh);
+  }
+
+  function loadClassifyTable(startMin, flThresh) {
+    const db = getDbIndex();
+    const params = new URLSearchParams({
+      start_barcode_min: startMin.toFixed(4),
+      full_length_threshold: flThresh.toFixed(4),
+      db: db,
+    });
+    fetch('/api/threshold-classify?' + params)
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('classify-table').innerHTML = html;
+      });
+  }
+
+  function loadAffectedReads(oldStartMin, oldFlThresh, newStartMin, newFlThresh) {
+    const db = getDbIndex();
+    const params = new URLSearchParams({
+      old_start_min: oldStartMin.toFixed(4),
+      old_fl_thresh: oldFlThresh.toFixed(4),
+      new_start_min: newStartMin.toFixed(4),
+      new_fl_thresh: newFlThresh.toFixed(4),
+      db: db,
+    });
+    fetch('/api/affected-reads?' + params)
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('affected-reads').innerHTML = html;
+      });
+  }
+
+  // DB selector change
+  const dbSelect = document.getElementById('db-select');
+  if (dbSelect) {
+    dbSelect.addEventListener('change', function() {
+      loadConfidenceData();
+    });
+  }
+
+  // Initial load
+  loadConfidenceData();
+})();
+</script>
 {% endblock %}
