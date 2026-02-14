@@ -16,10 +16,17 @@ def discover_runs(experiment_path: Path) -> list[RunInfo]:
     """
     runs: list[RunInfo] = []
 
-    for pod5_pass in sorted(experiment_path.rglob("pod5_pass")):
-        if not pod5_pass.is_dir():
-            continue
+    # MinKNOW uses pod5_pass/ when basecalling is enabled, pod5/ when raw-only
+    pod5_dirs: list[Path] = []
+    for name in ("pod5_pass", "pod5"):
+        for d in sorted(experiment_path.rglob(name)):
+            if d.is_dir() and d not in pod5_dirs:
+                # Skip pod5/ if pod5_pass/ already found in same run
+                if name == "pod5" and any(p.parent == d.parent for p in pod5_dirs):
+                    continue
+                pod5_dirs.append(d)
 
+    for pod5_pass in pod5_dirs:
         run_dir = pod5_pass.parent
         pod5_files = sorted(pod5_pass.rglob("*.pod5"))
         if not pod5_files:
