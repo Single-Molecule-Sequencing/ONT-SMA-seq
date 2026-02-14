@@ -11,9 +11,11 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from viz.api import router as api_router, set_store as set_api_store
 from viz.config_store import ConfigStore
 
 app = FastAPI(title="SMA-seq Config Visualizer")
+app.include_router(api_router)
 
 _HERE = Path(__file__).resolve().parent
 
@@ -29,6 +31,7 @@ def set_experiment_dir(path: Path) -> None:
     global experiment_dir, _store
     experiment_dir = path.resolve()
     _store = ConfigStore(experiment_dir)
+    set_api_store(_store)
 
 
 def _ctx(request: Request, active_page: str) -> dict:
