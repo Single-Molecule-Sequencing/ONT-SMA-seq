@@ -388,6 +388,10 @@ async def validate_badge() -> HTMLResponse:
 
 
 @router.post("/export")
-async def export_config() -> dict[str, str]:
-    """Placeholder for full config export."""
-    return {"status": "not_implemented"}
+async def export_html() -> dict[str, str]:
+    """Export all config pages as self-contained static HTML files."""
+    from viz.export import export_experiment
+
+    store = get_store()
+    output = export_experiment(store.dir)
+    return {"status": "ok", "path": str(output)}
