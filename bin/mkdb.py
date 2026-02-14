@@ -86,6 +86,8 @@ c.execute('''
 		bc_end_ed INTEGER,
 		bc_end_conf REAL,
 		trunc_level TEXT,
+		signal_duration_s REAL,
+		mean_qscore REAL,
 		FOREIGN KEY(tgt_id) REFERENCES Target(tgt_id),
 		FOREIGN KEY(mod_bitflag) REFERENCES Mods(mod_bitflag)
 	)
@@ -116,6 +118,33 @@ c.execute('''
 		tgt_id TEXT PRIMARY KEY,
 		tgt_refseq TEXT,
 		tgt_reflen INTEGER
+	)
+''')
+
+# RunMetadata Table
+c.execute('''
+	CREATE TABLE IF NOT EXISTS RunMetadata (
+		run_id TEXT PRIMARY KEY,
+		flow_cell_id TEXT,
+		device_id TEXT,
+		sample_id TEXT,
+		experiment_id TEXT,
+		kit TEXT,
+		protocol_run_id TEXT,
+		start_time TEXT,
+		basecall_model TEXT,
+		source_bam_count INTEGER,
+		source_bam_paths TEXT,
+		merge_timestamp TEXT
+	)
+''')
+
+# ReadRun Table
+c.execute('''
+	CREATE TABLE IF NOT EXISTS ReadRun (
+		read_id TEXT PRIMARY KEY,
+		run_id TEXT,
+		FOREIGN KEY (run_id) REFERENCES RunMetadata(run_id)
 	)
 ''')
 

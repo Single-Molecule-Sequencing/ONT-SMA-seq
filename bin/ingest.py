@@ -188,7 +188,7 @@ def insert_target(cursor: sqlite3.Cursor, tgt_id: str, tgt_seq: str, tgt_len: in
 
 
 def insert_read(cursor: sqlite3.Cursor, data: Tuple) -> None:
-	"""Inserts a single processed read record (21 columns)."""
+	"""Inserts a single processed read record (23 columns)."""
 	cursor.execute('''
 		INSERT OR IGNORE INTO Reads (
 			uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
@@ -196,8 +196,8 @@ def insert_read(cursor: sqlite3.Cursor, data: Tuple) -> None:
 			ed, q_bc, q_ld, ER,
 			bc_start_id, bc_start_ed, bc_start_conf,
 			bc_end_id, bc_end_ed, bc_end_conf,
-			trunc_level
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			trunc_level, signal_duration_s, mean_qscore
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	''', data)
 
 
@@ -470,14 +470,14 @@ if CLASSIFICATION_MODE:
 						construct_cfg.truncation.min_target_length,
 					)
 
-				# DB Insert (21 columns)
+				# DB Insert (23 columns)
 				read_data = (
 					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
 					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
 					ed, q_bc, q_ld, er_val,
 					bc_start_id, bc_start_ed, bc_start_conf,
 					bc_end_id, bc_end_ed, bc_end_conf,
-					trunc_level,
+					trunc_level, None, None,
 				)
 				insert_read(c, read_data)
 
@@ -608,14 +608,14 @@ else:
 					count_unknown_er += 1
 				uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
 
-				# DB Insert (21 columns, barcode fields are NULL)
+				# DB Insert (23 columns, barcode fields are NULL)
 				read_data = (
 					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
 					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
 					ed, q_bc, q_ld, er_val,
 					None, None, None,
 					None, None, None,
-					None
+					None, None, None
 				)
 				insert_read(c, read_data)
 

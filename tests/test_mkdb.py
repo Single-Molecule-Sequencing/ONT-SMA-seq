@@ -72,3 +72,29 @@ class TestReadsSchema:
         conn.close()
         assert "trunc_level" in columns
         assert columns["trunc_level"] == "TEXT"
+
+    def test_reads_table_has_signal_columns(self, db_path):
+        """Reads table must have signal_duration_s and mean_qscore columns."""
+        conn = sqlite3.connect(db_path)
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(Reads)").fetchall()]
+        conn.close()
+        assert "signal_duration_s" in cols
+        assert "mean_qscore" in cols
+
+    def test_run_metadata_table_exists(self, db_path):
+        """RunMetadata table must exist."""
+        conn = sqlite3.connect(db_path)
+        tables = [row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
+        conn.close()
+        assert "RunMetadata" in tables
+
+    def test_read_run_table_exists(self, db_path):
+        """ReadRun table must exist."""
+        conn = sqlite3.connect(db_path)
+        tables = [row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
+        conn.close()
+        assert "ReadRun" in tables
