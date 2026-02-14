@@ -21,10 +21,42 @@ from barcodes import BARCODES, BARCODE_LENGTH, reverse_complement
 _FULL_LENGTH_THRESHOLD = 0.75
 _FLANK_SEARCH_WINDOW = 50
 _READ_ID_TRUNCATE = 12
+_CONFIDENCE_THRESHOLDS = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0]
 
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+
+def _compute_n50(lengths: list[int]) -> int:
+    """Compute N50 from a list of read lengths.
+
+    Sort descending, walk cumulative sum; N50 is the length at which the
+    cumulative sum reaches 50% of the total bases.
+    """
+    if not lengths:
+        return 0
+    sorted_desc = sorted(lengths, reverse=True)
+    total_bases = sum(sorted_desc)
+    half = total_bases / 2.0
+    cumulative = 0
+    for length in sorted_desc:
+        cumulative += length
+        if cumulative >= half:
+            return length
+    return sorted_desc[-1]
+
+
+def _compute_median(values: list[float | int]) -> float:
+    """Compute median by sorting and taking the middle value."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(s[mid])
+    return (s[mid - 1] + s[mid]) / 2.0
 
 
 def classify_barcode_detailed(
@@ -254,6 +286,12 @@ def analyze_classification(
             "full_length_pct": (fl_count / count * 100.0) if count else 0.0,
             "avg_ed": sum(eds) / len(eds) if eds else 0.0,
             "avg_q_ld": sum(q_lds) / len(q_lds) if q_lds else 0.0,
+            "min_length": min(lengths) if lengths else 0,
+            "max_length": max(lengths) if lengths else 0,
+            "median_length": _compute_median(lengths),
+            "lengths": lengths,
+            "start_confs": start_confs,
+            "end_confs": end_confs,
         }
 
     result["per_target_stats"] = per_target_stats
@@ -393,6 +431,122 @@ def analyze_classification(
         for tgt_id, (seq, length) in references.items():
             refs_out[tgt_id] = {"seq": seq, "length": length}
         result["references"] = refs_out
+
+    # ------------------------------------------------------------------
+    # length_stats (new)
+    # ------------------------------------------------------------------
+    all_lengths: list[int] = [rd["readlen"] for rd in db_reads]
+    lengths_full: list[int] = []
+    lengths_trunc: list[int] = []
+
+    for rd in db_reads:
+        bc_end_conf = rd.get("bc_end_conf")
+        is_fl = bc_end_conf is not None and bc_end_conf >= _FULL_LENGTH_THRESHOLD
+        if is_fl:
+            lengths_full.append(rd["readlen"])
+        else:
+            lengths_trunc.append(rd["readlen"])
+
+    result["length_stats"] = {
+        "min": min(all_lengths) if all_lengths else 0,
+        "max": max(all_lengths) if all_lengths else 0,
+        "mean": sum(all_lengths) / len(all_lengths) if all_lengths else 0.0,
+        "median": _compute_median(all_lengths),
+        "n50": _compute_n50(all_lengths),
+        "lengths": all_lengths,
+        "lengths_full": lengths_full,
+        "lengths_trunc": lengths_trunc,
+    }
+
+    # ------------------------------------------------------------------
+    # quality_stats (new)
+    # ------------------------------------------------------------------
+    q_bc_values: list[float] = []
+    q_ld_values: list[float] = []
+    ed_values: list[int] = []
+
+    for rd in db_reads:
+        q_bc = rd.get("q_bc")
+        if q_bc is not None:
+            q_bc_values.append(q_bc)
+
+        tgt_id = rd.get("tgt_id", "")
+        is_matched = not tgt_id.startswith("unmatched_")
+        if is_matched:
+            q_ld = rd.get("q_ld")
+            if q_ld is not None:
+                q_ld_values.append(q_ld)
+            ed = rd.get("ed")
+            if ed is not None:
+                ed_values.append(ed)
+
+    result["quality_stats"] = {
+        "q_bc_values": q_bc_values,
+        "q_ld_values": q_ld_values,
+        "ed_values": ed_values,
+        "mean_q_bc": sum(q_bc_values) / len(q_bc_values) if q_bc_values else 0.0,
+        "mean_q_ld": sum(q_ld_values) / len(q_ld_values) if q_ld_values else 0.0,
+        "mean_ed": sum(ed_values) / len(ed_values) if ed_values else 0.0,
+    }
+
+    # ------------------------------------------------------------------
+    # confidence_scatter (new)
+    # ------------------------------------------------------------------
+    confidence_scatter: list[dict[str, Any]] = []
+
+    for rd in db_reads:
+        start_conf = rd.get("bc_start_conf")
+        end_conf = rd.get("bc_end_conf")
+        if start_conf is not None and end_conf is not None:
+            tgt_id = rd.get("tgt_id", "")
+            is_fl = end_conf >= _FULL_LENGTH_THRESHOLD
+            confidence_scatter.append({
+                "x": start_conf,
+                "y": end_conf,
+                "tgt": tgt_id,
+                "fl": is_fl,
+                "len": rd["readlen"],
+            })
+
+    result["confidence_scatter"] = confidence_scatter
+
+    # ------------------------------------------------------------------
+    # end_reason_counts (new)
+    # ------------------------------------------------------------------
+    er_counter: collections.Counter[str] = collections.Counter()
+    for rd in db_reads:
+        er = rd.get("ER")
+        if er is not None:
+            er_counter[er] += 1
+
+    result["end_reason_counts"] = dict(er_counter)
+
+    # ------------------------------------------------------------------
+    # classification_by_confidence (new)
+    # ------------------------------------------------------------------
+    classification_by_confidence: list[dict[str, Any]] = []
+
+    for threshold in _CONFIDENCE_THRESHOLDS:
+        count_at_threshold = 0
+        for rd in db_reads:
+            start_conf = rd.get("bc_start_conf")
+            end_conf = rd.get("bc_end_conf")
+            if (
+                start_conf is not None
+                and end_conf is not None
+                and start_conf >= threshold
+                and end_conf >= threshold
+            ):
+                count_at_threshold += 1
+
+        pct = (count_at_threshold / total * 100.0) if total else 0.0
+        classification_by_confidence.append({
+            "threshold": threshold,
+            "matched": count_at_threshold,
+            "pct": round(pct, 1),
+        })
+
+    result["classification_by_confidence"] = classification_by_confidence
 
     return result
 
