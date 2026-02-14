@@ -85,6 +85,7 @@ c.execute('''
 		bc_end_id TEXT,
 		bc_end_ed INTEGER,
 		bc_end_conf REAL,
+		trunc_level TEXT,
 		FOREIGN KEY(tgt_id) REFERENCES Target(tgt_id),
 		FOREIGN KEY(mod_bitflag) REFERENCES Mods(mod_bitflag)
 	)

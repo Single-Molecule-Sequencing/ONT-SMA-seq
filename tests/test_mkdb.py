@@ -64,3 +64,11 @@ class TestReadsSchema:
             "ed", "q_bc", "q_ld", "ER",
         }
         assert original.issubset(columns)
+
+    def test_trunc_level_column_exists(self, db_path):
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.execute("PRAGMA table_info(Reads)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        conn.close()
+        assert "trunc_level" in columns
+        assert columns["trunc_level"] == "TEXT"
