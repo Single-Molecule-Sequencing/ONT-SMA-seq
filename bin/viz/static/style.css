@@ -99,7 +99,8 @@
     color: #e65100;
 }
 
-.trunc-adapter {
+.trunc-adapter,
+.trunc-adapter_only {
     color: #9e9e9e;
 }
 

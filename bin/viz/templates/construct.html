@@ -1,6 +1,47 @@
 {% extends "base.html" %}
-{% block title %}Construct - SMA-seq Config Visualizer{% endblock %}
+{% block title %}Construct - SMA-seq{% endblock %}
+{% block head %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/construct.js" defer></script>
+{% endblock %}
 {% block content %}
-<h1>Construct</h1>
-<p>Coming soon...</p>
+<h1>Read Construct</h1>
+
+<h2>Full Library Product</h2>
+<div id="construct-diagram"></div>
+<div id="region-detail"></div>
+
+<h2>Truncation Classes</h2>
+<div id="truncation-diagram"></div>
+
+<h2>Barcode Assignment</h2>
+<div id="assignment-tables"
+     hx-get="/htmx/construct/assignments"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+</div>
+
+<h2>Truncation Rules</h2>
+<div id="truncation-rules"
+     hx-get="/htmx/construct/rules"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+</div>
+
+<h2>Auto-Generated References</h2>
+<button hx-post="/api/construct/auto-refs"
+        hx-target="#auto-ref-result"
+        hx-swap="innerHTML">
+  Generate Truncated References
+</button>
+<div id="auto-ref-result"></div>
+
+<script>
+  fetch('/api/construct')
+    .then(r => r.json())
+    .then(data => {
+      renderConstruct(data, '#construct-diagram', '#region-detail');
+      renderTruncationLadder(data, '#truncation-diagram');
+    });
+</script>
 {% endblock %}

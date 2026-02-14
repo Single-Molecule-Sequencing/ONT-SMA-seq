@@ -6,13 +6,17 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import edlib
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import barcodes as _barcodes_mod
 from viz.api import router as api_router, set_store as set_api_store
 from viz.config_store import ConfigStore
+from viz.models import Assumption, SampleSheetEntry
 
 app = FastAPI(title="SMA-seq Config Visualizer")
 app.include_router(api_router)
@@ -75,6 +79,7 @@ async def sample_sheet_page(request: Request):
 async def barcodes_page(request: Request):
     """Render the barcodes page."""
     ctx = _ctx(request, "barcodes")
+    ctx["arrangement"] = _store.read_arrangement() if _store else None
     return templates.TemplateResponse("barcodes.html", ctx)
 
 
@@ -96,7 +101,45 @@ async def targets_page(request: Request):
 async def assumptions_page(request: Request):
     """Render the assumptions page."""
     ctx = _ctx(request, "assumptions")
+    cfg = _store.experiment_config if _store else None
+    ctx["classification"] = cfg.classification if cfg else None
     return templates.TemplateResponse("assumptions.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# HTMX fragment routes - Construct page
+# ---------------------------------------------------------------------------
+
+
+@app.get("/htmx/construct/assignments", response_class=HTMLResponse)
+async def htmx_construct_assignments():
+    """Return barcode assignment tables as an HTMX HTML fragment."""
+    cfg = _store.experiment_config
+    html = f"<p><strong>Mode:</strong> {cfg.demultiplexing.mode}</p>"
+    if cfg.demultiplexing.start_barcode:
+        html += f"<p><strong>Start barcode:</strong> {cfg.demultiplexing.start_barcode}</p>"
+    if cfg.demultiplexing.end_barcode:
+        html += f"<p><strong>End barcode:</strong> {cfg.demultiplexing.end_barcode}</p>"
+    if cfg.demultiplexing.pairs:
+        html += "<table><thead><tr><th>Start</th><th>End</th><th>Alias</th></tr></thead><tbody>"
+        for p in cfg.demultiplexing.pairs:
+            html += f"<tr><td>{p.start}</td><td>{p.end}</td><td>{p.alias}</td></tr>"
+        html += "</tbody></table>"
+    else:
+        html += "<p><em>No barcode pairs configured.</em></p>"
+    return html
+
+
+@app.get("/htmx/construct/rules", response_class=HTMLResponse)
+async def htmx_construct_rules():
+    """Return truncation rules as an HTMX HTML fragment table."""
+    rules = _store.experiment_config.truncation.rules
+    html = "<table><thead><tr><th>Class</th><th>Rule</th></tr></thead><tbody>"
+    for field in ["full", "trunc_3prime", "trunc_target", "trunc_barcode", "adapter_only", "chimeric"]:
+        val = getattr(rules, field)
+        html += f"<tr><td><span class='trunc-label trunc-{field}'>{field}</span></td><td>{val}</td></tr>"
+    html += "</tbody></table>"
+    return html
 
 
 # ---------------------------------------------------------------------------
