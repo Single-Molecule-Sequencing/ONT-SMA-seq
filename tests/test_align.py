@@ -95,3 +95,61 @@ class TestSegmentedMetrics:
         # 5' segment: 4=2D4= -> contiguity = 4 (longest run without gap)
         segs = compute_segmented_metrics("4=2D4=10=10=", ref_len=30)
         assert segs["five_prime_contiguity"] == 4
+
+
+class TestTerminalMetrics:
+    """Test 5' and 3' alignment quality metrics."""
+
+    def test_perfect_alignment_no_offset(self):
+        from align import compute_terminal_metrics
+        m = compute_terminal_metrics("20=", ref_len=20)
+        assert m["five_prime_offset"] == 0
+        assert m["three_prime_offset"] == 0
+        assert m["five_prime_identity_20"] == 1.0
+        assert m["three_prime_identity_20"] == 1.0
+        assert m["five_prime_first_match"] == 0
+
+    def test_five_prime_deletion_offset(self):
+        from align import compute_terminal_metrics
+        # 3bp deletion at start, then 17 matches
+        m = compute_terminal_metrics("3D17=", ref_len=20)
+        assert m["five_prime_offset"] == 3
+        assert m["five_prime_first_match"] == 3
+
+    def test_three_prime_deletion_offset(self):
+        from align import compute_terminal_metrics
+        m = compute_terminal_metrics("18=2D", ref_len=20)
+        assert m["three_prime_offset"] == 2
+
+    def test_short_ref_identity_window(self):
+        from align import compute_terminal_metrics
+        # ref_len=10 < 20bp window -> use full ref
+        m = compute_terminal_metrics("10=", ref_len=10)
+        assert m["five_prime_identity_20"] == 1.0
+        assert m["three_prime_identity_20"] == 1.0
+
+
+class TestIndelPositions:
+    """Test significant indel position tracking."""
+
+    def test_no_indels(self):
+        from align import compute_indel_positions
+        result = compute_indel_positions("20=", min_size=3)
+        assert result == []
+
+    def test_small_indel_ignored(self):
+        from align import compute_indel_positions
+        result = compute_indel_positions("10=2I8=", min_size=3)
+        assert result == []
+
+    def test_significant_insertion_tracked(self):
+        from align import compute_indel_positions
+        result = compute_indel_positions("10=5I10=", min_size=3)
+        assert len(result) == 1
+        assert result[0] == ("I", 5, 10)  # type, size, ref_position
+
+    def test_significant_deletion_tracked(self):
+        from align import compute_indel_positions
+        result = compute_indel_positions("5=4D15=", min_size=3)
+        assert len(result) == 1
+        assert result[0] == ("D", 4, 5)
