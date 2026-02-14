@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+import edlib
+
 CIGAR_RE = re.compile(r"(\d+)([=XIDM])")
 SIG_INDEL_THRESHOLD = 5
 
@@ -228,3 +230,104 @@ def compute_indel_positions(cigar: str, min_size: int = 3) -> list[tuple[str, in
             ref_pos += length
 
     return result
+
+
+METRIC_COLUMNS = [
+    "read_id", "ref_id", "read_len", "ref_len",
+    "ed", "ned", "identity", "ref_coverage", "read_to_ref_ratio",
+    "seg5_identity", "seg5_contiguity",
+    "segM_identity", "segM_contiguity",
+    "seg3_identity", "seg3_contiguity",
+    "max_ins", "max_del", "n_sig_indels",
+    "five_prime_offset", "five_prime_identity_20",
+    "three_prime_offset", "three_prime_identity_20",
+    "rank", "margin",
+]
+
+
+def align_read_to_ref(read_seq: str, ref_seq: str, ref_id: str) -> dict:
+    """Align a single read to a single reference (forward-strand, NW mode).
+
+    Returns a dict with all metric columns except rank/margin (added during classification).
+    """
+    result = edlib.align(read_seq, ref_seq, mode="NW", task="path")
+    cigar = result.get("cigar", "")
+    ed = result.get("editDistance", len(ref_seq))
+
+    ref_len = len(ref_seq)
+    read_len = len(read_seq)
+
+    cigar_m = compute_cigar_metrics(cigar, ref_len, read_len)
+    seg_m = compute_segmented_metrics(cigar, ref_len)
+    term_m = compute_terminal_metrics(cigar, ref_len)
+
+    return {
+        "read_id": "",
+        "ref_id": ref_id,
+        "read_len": read_len,
+        "ref_len": ref_len,
+        "ed": ed,
+        "ned": ed / ref_len if ref_len > 0 else float("inf"),
+        "identity": cigar_m["identity"],
+        "ref_coverage": cigar_m["ref_coverage"],
+        "read_to_ref_ratio": read_len / ref_len if ref_len > 0 else 0.0,
+        "seg5_identity": seg_m["five_prime_identity"],
+        "seg5_contiguity": seg_m["five_prime_contiguity"],
+        "segM_identity": seg_m["middle_identity"],
+        "segM_contiguity": seg_m["middle_contiguity"],
+        "seg3_identity": seg_m["three_prime_identity"],
+        "seg3_contiguity": seg_m["three_prime_contiguity"],
+        "max_ins": cigar_m["max_ins"],
+        "max_del": cigar_m["max_del"],
+        "n_sig_indels": cigar_m["n_sig_indels"],
+        "five_prime_offset": term_m["five_prime_offset"],
+        "five_prime_identity_20": term_m["five_prime_identity_20"],
+        "three_prime_offset": term_m["three_prime_offset"],
+        "three_prime_identity_20": term_m["three_prime_identity_20"],
+        "rank": 0,
+        "margin": 0.0,
+    }
+
+
+def classify_read(
+    read_seq: str, read_id: str, refs: dict[str, str],
+) -> dict:
+    """Align read against all references and classify by best NED.
+
+    Returns dict with: read_id, read_len, assigned_ref, best_ned, second_ned,
+    margin, confidence_flag, pairwise (list of per-ref metric dicts).
+    """
+    pairwise = []
+    for ref_id, ref_seq in refs.items():
+        m = align_read_to_ref(read_seq, ref_seq, ref_id)
+        m["read_id"] = read_id
+        pairwise.append(m)
+
+    pairwise.sort(key=lambda x: x["ned"])
+    for i, m in enumerate(pairwise):
+        m["rank"] = i + 1
+
+    best_ned = pairwise[0]["ned"]
+    second_ned = pairwise[1]["ned"] if len(pairwise) > 1 else float("inf")
+    margin = second_ned - best_ned
+
+    for m in pairwise:
+        m["margin"] = margin
+
+    if best_ned > 0.5:
+        flag = "POOR"
+    elif margin <= 0.1:
+        flag = "LOW"
+    else:
+        flag = "HIGH"
+
+    return {
+        "read_id": read_id,
+        "read_len": len(read_seq),
+        "assigned_ref": pairwise[0]["ref_id"],
+        "best_ned": best_ned,
+        "second_ned": second_ned,
+        "margin": margin,
+        "confidence_flag": flag,
+        "pairwise": pairwise,
+    }

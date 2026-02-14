@@ -153,3 +153,62 @@ class TestIndelPositions:
         result = compute_indel_positions("5=4D15=", min_size=3)
         assert len(result) == 1
         assert result[0] == ("D", 4, 5)
+
+
+class TestAlignReadToRef:
+    """Test single read-vs-ref alignment with full metric computation."""
+
+    def test_identical_sequences(self):
+        from align import align_read_to_ref
+        ref = "ACGTACGTACGTACGTACGTACGTACGTACGT"  # 32bp
+        m = align_read_to_ref(ref, ref, "target1")
+        assert m["ref_id"] == "target1"
+        assert m["ed"] == 0
+        assert m["ned"] == 0.0
+        assert m["identity"] == 1.0
+
+    def test_with_errors(self):
+        from align import align_read_to_ref
+        ref  = "ACGTACGTACGTACGTACGTACGTACGTACGT"  # 32bp
+        read = "ACGTACTTACGTACGTACGTACGTACGTACGT"  # 1 mismatch at pos 6
+        m = align_read_to_ref(read, ref, "target1")
+        assert m["ed"] == 1
+        assert m["ned"] == pytest.approx(1 / 32)
+
+    def test_returns_all_metric_keys(self):
+        from align import align_read_to_ref, METRIC_COLUMNS
+        ref = "ACGTACGTAC"
+        m = align_read_to_ref(ref, ref, "t1")
+        for col in METRIC_COLUMNS:
+            assert col in m, f"Missing metric: {col}"
+
+
+class TestClassifyRead:
+    """Test read classification against multiple references."""
+
+    def test_assigns_best_match(self):
+        from align import classify_read
+        refs = {
+            "targetA": "ACGTACGTACGTACGT",
+            "targetB": "TTTTTTTTTTTTTTTT",
+        }
+        read = "ACGTACGTACGTACGT"
+        result = classify_read(read, "read1", refs)
+        assert result["assigned_ref"] == "targetA"
+        assert result["best_ned"] == 0.0
+        assert result["margin"] > 0
+
+    def test_poor_match_flagged(self):
+        from align import classify_read
+        refs = {"targetA": "ACGTACGTACGTACGT"}
+        read = "NNNNNNNNNNNNNNNN"
+        result = classify_read(read, "read1", refs)
+        assert result["confidence_flag"] == "POOR"
+
+    def test_returns_all_pairwise_metrics(self):
+        from align import classify_read
+        refs = {"t1": "AAAA", "t2": "CCCC"}
+        result = classify_read("AAAA", "r1", refs)
+        assert len(result["pairwise"]) == 2
+        assert result["pairwise"][0]["rank"] == 1
+        assert result["pairwise"][1]["rank"] == 2
