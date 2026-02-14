@@ -79,6 +79,12 @@ c.execute('''
 		q_bc REAL,
 		q_ld REAL,
 		ER TEXT,
+		bc_start_id TEXT,
+		bc_start_ed INTEGER,
+		bc_start_conf REAL,
+		bc_end_id TEXT,
+		bc_end_ed INTEGER,
+		bc_end_conf REAL,
 		FOREIGN KEY(tgt_id) REFERENCES Target(tgt_id),
 		FOREIGN KEY(mod_bitflag) REFERENCES Mods(mod_bitflag)
 	)
