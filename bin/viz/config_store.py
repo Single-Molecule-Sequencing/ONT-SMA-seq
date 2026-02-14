@@ -259,6 +259,40 @@ class ConfigStore:
         return errors
 
     # ------------------------------------------------------------------
+    # MinKNOW import
+    # ------------------------------------------------------------------
+
+    def import_from_minknow(self, minknow_dir: Path) -> None:
+        """Import config files from a MinKNOW output directory.
+
+        Discovers and copies:
+        - sample_sheet_*.csv -> sample_sheet.csv
+        - final_summary_*.txt -> parses for metadata
+        """
+        minknow_dir = Path(minknow_dir).resolve()
+
+        # Find sample sheet
+        ss_files = list(minknow_dir.glob("sample_sheet_*.csv"))
+        if ss_files:
+            dest = self.dir / "sample_sheet.csv"
+            shutil.copy2(ss_files[0], dest)
+
+        # Find final summary for metadata
+        fs_files = list(minknow_dir.glob("final_summary_*.txt"))
+        if fs_files:
+            metadata: dict[str, str] = {}
+            with open(fs_files[0]) as f:
+                for line in f:
+                    if "=" in line:
+                        key, _, val = line.strip().partition("=")
+                        metadata[key.strip()] = val.strip()
+            if "sample_id" in metadata:
+                self.experiment_config.description = (
+                    f"Imported from MinKNOW: {metadata.get('sample_id', '')}"
+                )
+                self.save_experiment_config()
+
+    # ------------------------------------------------------------------
     # File versioning
     # ------------------------------------------------------------------
 

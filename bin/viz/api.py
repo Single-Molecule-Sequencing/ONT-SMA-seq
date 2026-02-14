@@ -358,6 +358,22 @@ async def put_assumptions(payload: list[dict[str, str]]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Import
+# ---------------------------------------------------------------------------
+
+
+@router.post("/import/minknow")
+async def import_minknow(data: dict[str, str]) -> dict[str, str]:
+    from pathlib import Path
+    store = get_store()
+    minknow_path = Path(data["path"])
+    if not minknow_path.is_dir():
+        raise HTTPException(400, f"Not a directory: {minknow_path}")
+    store.import_from_minknow(minknow_path)
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # 7. Validation
 # ---------------------------------------------------------------------------
 
