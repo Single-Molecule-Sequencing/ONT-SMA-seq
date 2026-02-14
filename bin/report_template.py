@@ -75,6 +75,7 @@ def generate_html(analysis: dict[str, Any], exp_metadata: dict[str, Any]) -> str
     confidence_scatter = analysis.get("confidence_scatter") or []
     end_reason_counts = analysis.get("end_reason_counts") or {}
     classification_by_confidence = analysis.get("classification_by_confidence") or []
+    truncation_counts = analysis.get("truncation_counts") or {}
 
     # Metadata
     exp_id = exp_metadata.get("exp_id") or "unknown"
@@ -797,7 +798,36 @@ canvas {{ display: block; margin: 10px auto; }}
 
     html += """</table>
 </div>
+"""
 
+    # Truncation breakdown table (if available)
+    if truncation_counts:
+        html += """
+<h3>Truncation Level Breakdown</h3>
+<div class="table-container">
+<table>
+<tr><th>Level</th><th>Count</th><th>Percentage</th></tr>
+"""
+        # Order levels: full_length, bc1_target_bc2, bc1_target, bc1_only, adapter_only
+        level_order = ["full_length", "bc1_target_bc2", "bc1_target", "bc1_only", "adapter_only"]
+        for level in level_order:
+            if level in truncation_counts:
+                count = truncation_counts[level]
+                pct = (count / total * 100.0) if total else 0.0
+                html += f'<tr><td><strong>{level}</strong></td><td>{count}</td><td>{pct:.1f}%</td></tr>\n'
+
+        # Add any other levels not in the ordered list
+        for level in sorted(truncation_counts.keys()):
+            if level not in level_order:
+                count = truncation_counts[level]
+                pct = (count / total * 100.0) if total else 0.0
+                html += f'<tr><td><strong>{level}</strong></td><td>{count}</td><td>{pct:.1f}%</td></tr>\n'
+
+        html += """</table>
+</div>
+"""
+
+    html += """
 <h3>Barcode Pair Matrix</h3>
 <p class="note">Rows = start barcode, Columns = end barcode. Expected pairs are highlighted with a blue border. Click a cell to filter the reads table to that pair.</p>
 <div class="construct-diagram">

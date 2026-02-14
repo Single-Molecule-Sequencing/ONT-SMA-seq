@@ -429,3 +429,46 @@ class TestReportIntegration:
         assert "tab-barcodes" in html
         assert "test_target" in html
         assert "nb05" in html
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: truncation analysis
+# ---------------------------------------------------------------------------
+
+class TestTruncationAnalysis:
+
+    def test_truncation_counts(self):
+        """Reads with trunc_level get counted correctly."""
+        pair_to_alias = {("nb05", "nb10"): "test_target"}
+        reads = [
+            make_db_row("read_0001", make_full_length_read(), bc_end_conf=1.0),
+            make_db_row("read_0002", make_full_length_read(), bc_end_conf=0.9),
+            make_db_row("read_0003", make_truncated_read(), tgt_id="unmatched_nb05_nb09",
+                        bc_end="nb09", bc_end_conf=0.5, ed=None, q_ld=None),
+        ]
+        # Add trunc_level to reads
+        reads[0]["trunc_level"] = "full_length"
+        reads[1]["trunc_level"] = "full_length"
+        reads[2]["trunc_level"] = "bc1_target"
+
+        result = analyze_classification(reads, pair_to_alias)
+        trunc_counts = result.get("truncation_counts", {})
+
+        assert trunc_counts.get("full_length") == 2
+        assert trunc_counts.get("bc1_target") == 1
+        assert trunc_counts.get("bc1_only") is None  # not present
+
+    def test_truncation_absent_when_no_levels(self):
+        """Reads without trunc_level produce empty dict."""
+        pair_to_alias = {("nb05", "nb10"): "test_target"}
+        reads = [
+            make_db_row("read_0001", make_full_length_read(), bc_end_conf=1.0),
+            make_db_row("read_0002", make_truncated_read(), tgt_id="unmatched_nb05_nb09",
+                        bc_end="nb09", bc_end_conf=0.5, ed=None, q_ld=None),
+        ]
+        # No trunc_level field
+
+        result = analyze_classification(reads, pair_to_alias)
+        trunc_counts = result.get("truncation_counts", {})
+
+        assert trunc_counts == {}

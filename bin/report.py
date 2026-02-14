@@ -14,6 +14,7 @@ from pathlib import Path
 from sample_sheet import parse_sample_sheet
 from report_analysis import analyze_classification
 from report_template import generate_html
+from construct import parse_construct_toml
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +36,8 @@ parser.add_argument("--flank-front", default=None,
     help="Forward front flanking sequence (e.g., AAGGTTAA)")
 parser.add_argument("--flank-rear", default=None,
     help="Forward rear flanking sequence (e.g., CAGCACCT)")
+parser.add_argument("-c", "--construct", default=None,
+    help="Construct TOML file (overrides --flank-front/--flank-rear)")
 args = parser.parse_args()
 
 
@@ -75,7 +78,7 @@ db_reads = []
 for row in conn.execute(
     "SELECT read_id, readseq, readlen, tgt_id, ed, q_bc, q_ld, ER, "
     "bc_start_id, bc_start_ed, bc_start_conf, "
-    "bc_end_id, bc_end_ed, bc_end_conf FROM Reads"
+    "bc_end_id, bc_end_ed, bc_end_conf, trunc_level FROM Reads"
 ):
     db_reads.append(dict(row))
 
@@ -106,6 +109,24 @@ print(f"[report] {len(barcode_pair_to_alias)} barcode pairs loaded")
 
 
 # ---------------------------------------------------------------------------
+# Parse construct if provided
+# ---------------------------------------------------------------------------
+
+flank_front = args.flank_front
+flank_rear = args.flank_rear
+
+if args.construct:
+    CONSTRUCT_PATH = Path(args.construct)
+    if not CONSTRUCT_PATH.exists():
+        sys.exit(f"[report] Error: Construct file not found: {CONSTRUCT_PATH}")
+    print(f"[report] Parsing construct TOML: {CONSTRUCT_PATH}")
+    construct_cfg = parse_construct_toml(CONSTRUCT_PATH)
+    flank_front = construct_cfg.arrangement.mask1_front
+    flank_rear = construct_cfg.arrangement.mask1_rear
+    print(f"[report] Using flanks from construct: front={flank_front}, rear={flank_rear}")
+
+
+# ---------------------------------------------------------------------------
 # Analyze
 # ---------------------------------------------------------------------------
 
@@ -114,8 +135,8 @@ analysis = analyze_classification(
     db_reads=db_reads,
     barcode_pair_to_alias=barcode_pair_to_alias,
     max_detail_reads=args.max_detail_reads,
-    flank_front=args.flank_front,
-    flank_rear=args.flank_rear,
+    flank_front=flank_front,
+    flank_rear=flank_rear,
     references=references if references else None,
 )
 

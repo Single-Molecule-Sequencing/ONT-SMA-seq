@@ -242,6 +242,17 @@ def analyze_classification(
     }
 
     # ------------------------------------------------------------------
+    # truncation_counts
+    # ------------------------------------------------------------------
+    truncation_counts: dict[str, int] = {}
+    for r in db_reads:
+        level = r.get("trunc_level")
+        if level:
+            truncation_counts[level] = truncation_counts.get(level, 0) + 1
+
+    result["truncation_counts"] = truncation_counts
+
+    # ------------------------------------------------------------------
     # per_target_stats
     # ------------------------------------------------------------------
     target_groups: dict[str, list[dict]] = collections.defaultdict(list)
