@@ -149,7 +149,14 @@ class ConstructConfig:
     def flank_rear(self) -> str:
         """Leading flank before RC(barcode2) (mask2_front).
 
-        For start_only mode this returns an empty string.
+        For start_only mode this returns an empty string (not None) since there
+        is no second barcode or rear flank in the construct arrangement.
+
+        Returns
+        -------
+        str
+            The mask2_front sequence for dual_independent mode, or empty string
+            for start_only mode.
         """
         return self.arrangement.mask2_front or ""
 
@@ -266,6 +273,28 @@ def parse_construct_toml(path: Path | str) -> ConstructConfig:
         raise ValidationError(
             f"Invalid mode '{mode}': must be one of {sorted(_VALID_MODES)}"
         )
+
+    # --- Validate mode matches arrangement structure ---
+    has_mask2_front = arrangement.mask2_front is not None
+    has_mask2_rear = arrangement.mask2_rear is not None
+    has_barcode2_pattern = arrangement.barcode2_pattern is not None
+
+    if mode == "dual_independent":
+        if not has_mask2_front or not has_mask2_rear:
+            raise ValidationError(
+                f"Mode '{mode}' requires both mask2_front and mask2_rear "
+                f"in [arrangement] section"
+            )
+        if not has_barcode2_pattern:
+            raise ValidationError(
+                f"Mode '{mode}' requires barcode2_pattern in [arrangement] section"
+            )
+    elif mode == "start_only":
+        if has_mask2_front or has_mask2_rear:
+            raise ValidationError(
+                f"Mode '{mode}' should not have mask2_front or mask2_rear "
+                f"in [arrangement] section"
+            )
 
     barcode_fasta = sma_data.get("barcode_fasta")
 

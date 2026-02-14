@@ -303,3 +303,52 @@ class TestConstructValidation:
         )
         with pytest.raises(ValidationError, match="DNA"):
             parse_construct_toml(p)
+
+    def test_dual_mode_without_mask2_fails(self, tmp_path: Path):
+        """dual_independent mode without mask2_front/mask2_rear must fail."""
+        p = tmp_path / "dual_no_mask2.toml"
+        p.write_text(
+            "[arrangement]\n"
+            'name = "test"\nkit = "SQK-NBD114-96"\n'
+            'mask1_front = "AAGGTTAA"\nmask1_rear = "CAGCACCT"\n'
+            'barcode1_pattern = "NB%02i"\nbarcode2_pattern = "NB%02i"\n'
+            "first_index = 1\nlast_index = 96\n"
+            '[sma]\nmode = "dual_independent"\n'
+            '[[sma.targets]]\nbarcode1 = "NB01"\nbarcode2 = "NB02"\n'
+            'alias = "x"\nreference = "x.fasta"\n'
+        )
+        with pytest.raises(ValidationError, match="mask2"):
+            parse_construct_toml(p)
+
+    def test_dual_mode_without_barcode2_pattern_fails(self, tmp_path: Path):
+        """dual_independent mode without barcode2_pattern must fail."""
+        p = tmp_path / "dual_no_bc2_pattern.toml"
+        p.write_text(
+            "[arrangement]\n"
+            'name = "test"\nkit = "SQK-NBD114-96"\n'
+            'mask1_front = "AAGGTTAA"\nmask1_rear = "CAGCACCT"\n'
+            'mask2_front = "AGGTGCTG"\nmask2_rear = "TTAACCTT"\n'
+            'barcode1_pattern = "NB%02i"\n'
+            "first_index = 1\nlast_index = 96\n"
+            '[sma]\nmode = "dual_independent"\n'
+            '[[sma.targets]]\nbarcode1 = "NB01"\nbarcode2 = "NB02"\n'
+            'alias = "x"\nreference = "x.fasta"\n'
+        )
+        with pytest.raises(ValidationError, match="barcode2_pattern"):
+            parse_construct_toml(p)
+
+    def test_start_only_with_mask2_fails(self, tmp_path: Path):
+        """start_only mode with mask2_front or mask2_rear must fail."""
+        p = tmp_path / "start_with_mask2.toml"
+        p.write_text(
+            "[arrangement]\n"
+            'name = "test"\nkit = "SQK-NBD114-96"\n'
+            'mask1_front = "AAGGTTAA"\nmask1_rear = "CAGCACCT"\n'
+            'mask2_front = "AGGTGCTG"\nmask2_rear = "TTAACCTT"\n'
+            'barcode1_pattern = "NB%02i"\nfirst_index = 1\nlast_index = 96\n'
+            '[sma]\nmode = "start_only"\n'
+            '[[sma.targets]]\nbarcode1 = "NB01"\n'
+            'alias = "x"\nreference = "x.fasta"\n'
+        )
+        with pytest.raises(ValidationError, match="should not have mask2"):
+            parse_construct_toml(p)
