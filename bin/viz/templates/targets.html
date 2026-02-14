@@ -2,5 +2,44 @@
 {% block title %}Targets - SMA-seq Config Visualizer{% endblock %}
 {% block content %}
 <h1>Targets</h1>
-<p>Coming soon...</p>
+
+<article>
+  <header>Target References</header>
+  <table>
+    <thead>
+      <tr>
+        <th>Target ID</th>
+        <th>Length</th>
+        <th>GC%</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="targets-body" hx-get="/htmx/targets/rows" hx-trigger="load" hx-swap="innerHTML">
+      <tr><td colspan="4">Loading...</td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article>
+  <header>Add Target</header>
+  <form hx-post="/htmx/targets/add" hx-target="#targets-body" hx-swap="innerHTML"
+        hx-on::after-request="document.body.dispatchEvent(new Event('configChanged'))">
+    <label>
+      Target ID
+      <input type="text" name="tgt_id" required pattern="[A-Za-z0-9_\.\-]+" placeholder="e.g. target_01">
+    </label>
+    <label>
+      Sequence (FASTA content)
+      <textarea name="sequence" rows="4" required placeholder="Paste DNA sequence (A, C, G, T only)"></textarea>
+    </label>
+    <button type="submit">Add Target</button>
+  </form>
+</article>
+
+<article>
+  <header>Auto-Generated References</header>
+  <div id="auto-refs" hx-get="/htmx/targets/auto-refs" hx-trigger="load" hx-swap="innerHTML">
+    <p>Loading...</p>
+  </div>
+</article>
 {% endblock %}

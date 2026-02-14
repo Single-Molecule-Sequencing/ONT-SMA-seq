@@ -2,5 +2,89 @@
 {% block title %}Assumptions - SMA-seq Config Visualizer{% endblock %}
 {% block content %}
 <h1>Assumptions</h1>
-<p>Coming soon...</p>
+
+<article>
+  <header>Documented Assumptions</header>
+  <table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Assumption</th>
+        <th>Rationale</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="assumptions-body" hx-get="/htmx/assumptions/rows" hx-trigger="load" hx-swap="innerHTML">
+      <tr><td colspan="4">Loading...</td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article>
+  <header>Add Assumption</header>
+  <form hx-post="/htmx/assumptions/add" hx-target="#assumptions-body" hx-swap="innerHTML"
+        hx-on::after-request="document.body.dispatchEvent(new Event('configChanged'))">
+    <label>
+      Key
+      <input type="text" name="key" required pattern="[A-Za-z0-9_]+" placeholder="e.g. strand_orientation">
+    </label>
+    <label>
+      Assumption
+      <input type="text" name="text" required placeholder="Describe the assumption">
+    </label>
+    <label>
+      Rationale
+      <input type="text" name="why" required placeholder="Why this assumption is made">
+    </label>
+    <button type="submit">Add Assumption</button>
+  </form>
+</article>
+
+<article>
+  <header>Quality Metrics</header>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Formula</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>q_bc</strong> (Barcode Quality)</td>
+        <td><code>Probability-averaged Phred: -10*log10(mean(10^(-Qi/10)))</code></td>
+      </tr>
+      <tr>
+        <td><strong>q_ld</strong> (Edit Distance Quality)</td>
+        <td><code>-10*log10(min(max(1/L^2, ed/L), 1.0))</code></td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
+<article>
+  <header>Classification</header>
+  <table>
+    <thead>
+      <tr>
+        <th>Parameter</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Barcode Search Window</td>
+        <td><code>{{ classification.barcode_search_window }}</code> bp</td>
+      </tr>
+      <tr>
+        <td>Confidence Formula</td>
+        <td><code>{{ classification.confidence_formula }}</code></td>
+      </tr>
+      <tr>
+        <td>Ambiguity Triggers Full Construct</td>
+        <td><code>{{ classification.ambiguity_triggers_full_construct }}</code></td>
+      </tr>
+    </tbody>
+  </table>
+</article>
 {% endblock %}

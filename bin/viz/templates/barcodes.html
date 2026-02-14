@@ -2,5 +2,108 @@
 {% block title %}Barcodes - SMA-seq Config Visualizer{% endblock %}
 {% block content %}
 <h1>Barcodes</h1>
-<p>Coming soon...</p>
+
+<article>
+  <header>ONT Native Barcodes (Used)</header>
+  <div id="used-barcodes-table" hx-get="/htmx/barcodes/used-table" hx-trigger="load" hx-swap="innerHTML">
+    <p>Loading...</p>
+  </div>
+</article>
+
+<article>
+  <header>Arrangement</header>
+  {% if arrangement %}
+  <form hx-put="/htmx/barcodes/arrangement" hx-swap="none">
+    <div class="grid">
+      <label>
+        Name
+        <input type="text" name="name" value="{{ arrangement.name }}" required>
+      </label>
+      <label>
+        Kit
+        <input type="text" name="kit" value="{{ arrangement.kit }}">
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Mask1 Front
+        <input type="text" name="mask1_front" value="{{ arrangement.mask1_front }}">
+      </label>
+      <label>
+        Mask1 Rear
+        <input type="text" name="mask1_rear" value="{{ arrangement.mask1_rear }}">
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Mask2 Front
+        <input type="text" name="mask2_front" value="{{ arrangement.mask2_front }}">
+      </label>
+      <label>
+        Mask2 Rear
+        <input type="text" name="mask2_rear" value="{{ arrangement.mask2_rear }}">
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Barcode1 Pattern
+        <input type="text" name="barcode1_pattern" value="{{ arrangement.barcode1_pattern }}">
+      </label>
+      <label>
+        Barcode2 Pattern
+        <input type="text" name="barcode2_pattern" value="{{ arrangement.barcode2_pattern }}">
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        First Index
+        <input type="number" name="first_index" value="{{ arrangement.first_index }}" min="1" max="96">
+      </label>
+      <label>
+        Last Index
+        <input type="number" name="last_index" value="{{ arrangement.last_index }}" min="1" max="96">
+      </label>
+    </div>
+    <h4>Scoring Parameters</h4>
+    <div class="grid">
+      <label>
+        Max Barcode Penalty
+        <input type="number" name="scoring_max_barcode_penalty" value="{{ arrangement.scoring.max_barcode_penalty }}">
+      </label>
+      <label>
+        Min Barcode Penalty Dist
+        <input type="number" name="scoring_min_barcode_penalty_dist" value="{{ arrangement.scoring.min_barcode_penalty_dist }}">
+      </label>
+      <label>
+        Min Separation Only Dist
+        <input type="number" name="scoring_min_separation_only_dist" value="{{ arrangement.scoring.min_separation_only_dist }}">
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Barcode End Proximity
+        <input type="number" name="scoring_barcode_end_proximity" value="{{ arrangement.scoring.barcode_end_proximity }}">
+      </label>
+      <label>
+        Front Barcode Window
+        <input type="number" name="scoring_front_barcode_window" value="{{ arrangement.scoring.front_barcode_window }}">
+      </label>
+      <label>
+        Rear Barcode Window
+        <input type="number" name="scoring_rear_barcode_window" value="{{ arrangement.scoring.rear_barcode_window }}">
+      </label>
+    </div>
+    <button type="submit">Save Arrangement</button>
+  </form>
+  {% else %}
+  <p>No <code>arrangement.toml</code> found in experiment directory.</p>
+  {% endif %}
+</article>
+
+<article>
+  <header>Edit Distance Matrix</header>
+  <div id="distance-heatmap" hx-get="/htmx/barcodes/distances" hx-trigger="load" hx-swap="innerHTML">
+    <p>Loading...</p>
+  </div>
+</article>
 {% endblock %}

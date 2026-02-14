@@ -2,5 +2,65 @@
 {% block title %}Sample Sheet - SMA-seq Config Visualizer{% endblock %}
 {% block content %}
 <h1>Sample Sheet</h1>
-<p>Coming soon...</p>
+
+<article>
+  <header>Entries</header>
+  <table>
+    <thead>
+      <tr>
+        <th>Barcode Pair</th>
+        <th>Upstream</th>
+        <th>Downstream</th>
+        <th>Alias</th>
+        <th>Kit</th>
+        <th>Type</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="sample-sheet-body" hx-get="/htmx/sample-sheet/rows" hx-trigger="load" hx-swap="innerHTML">
+      <tr><td colspan="7">Loading...</td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article>
+  <header>Add Entry</header>
+  <form hx-post="/htmx/sample-sheet/add" hx-target="#sample-sheet-body" hx-swap="innerHTML"
+        hx-on::after-request="document.body.dispatchEvent(new Event('configChanged'))">
+    <div class="grid">
+      <label>
+        Upstream Barcode
+        <select name="upstream" required>
+          {% for i in range(1, 97) %}
+          <option value="barcode{{ '%02d'|format(i) }}">barcode{{ '%02d'|format(i) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Downstream Barcode
+        <select name="downstream" required>
+          {% for i in range(1, 97) %}
+          <option value="barcode{{ '%02d'|format(i) }}">barcode{{ '%02d'|format(i) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="grid">
+      <label>
+        Alias
+        <input type="text" name="alias" required pattern="[A-Za-z0-9_\.\-]+" placeholder="e.g. sample_01">
+      </label>
+      <label>
+        Kit (optional)
+        <input type="text" name="kit" placeholder="e.g. SQK-NBD114-96">
+      </label>
+    </div>
+    <button type="submit">Add Entry</button>
+  </form>
+</article>
+
+<article>
+  <header>Import / Export</header>
+  <p><a href="/api/sample-sheet/export" role="button" class="outline">Download sample_sheet.csv</a></p>
+</article>
 {% endblock %}
