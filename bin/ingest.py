@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Tuple, Any, Dict, Optional
 
 from barcodes import BARCODES, BARCODE_LENGTH, classify_barcode, reverse_complement
+from construct import parse_construct_toml
+from report_analysis import find_flank_position
 from sample_sheet import parse_sample_sheet, detect_barcode_ambiguity
 
 
@@ -30,6 +32,98 @@ SEGMENT_LEN = 100  # bp window for barcode search at read start/end
 #########
 # funcs #
 #########
+
+
+def classify_truncation(
+	read_seq: str,
+	bc_start_conf: float,
+	bc_end_conf: float,
+	bc_start_ed: int,
+	bc_end_ed: int,
+	flank_front: str,
+	flank_rear: str,
+	flank_rev_front: str,
+	segment_len: int,
+	confidence,
+	min_target_length: int,
+) -> str:
+	"""Classify the truncation level of a read using construct geometry.
+
+	Classification levels (evaluated in order):
+	  - adapter_only    : start barcode confidence below threshold
+	  - bc1_only        : read too short to contain target after front flank
+	  - full_length     : end barcode confidence high AND rear flank found
+	  - bc1_target_bc2  : end barcode has moderate confidence (0.3 <= conf < threshold)
+	  - bc1_target      : has bc1 and target but no detectable bc2
+
+	Parameters
+	----------
+	read_seq : str
+		Full read sequence.
+	bc_start_conf : float
+		Start barcode confidence score.
+	bc_end_conf : float
+		End barcode confidence score.
+	bc_start_ed : int
+		Start barcode edit distance.
+	bc_end_ed : int
+		End barcode edit distance.
+	flank_front : str
+		Front flanking sequence (mask1_rear) to search after bc1.
+	flank_rear : str
+		Rear flanking sequence (mask2_front).
+	flank_rev_front : str
+		Reverse complement of mask2_front, to search near end of read.
+	segment_len : int
+		Search window length for barcodes at read start/end.
+	confidence : ConfidenceConfig
+		Confidence thresholds (full_length_threshold, start_barcode_min).
+	min_target_length : int
+		Minimum target length to consider a read as containing target.
+
+	Returns
+	-------
+	str
+		One of: 'adapter_only', 'bc1_only', 'full_length', 'bc1_target_bc2',
+		'bc1_target'.
+	"""
+	# Step 1: Check start barcode confidence
+	if bc_start_conf < confidence.start_barcode_min:
+		return "adapter_only"
+
+	# Step 2: Find front flank (mask1_rear) in first segment_len + flank_len region
+	flank_len = len(flank_front)
+	read_len = len(read_seq)
+	search_end = min(segment_len + flank_len, read_len)
+	front_hit = find_flank_position(read_seq, flank_front, 0, search_end)
+
+	# Step 3: If read too short for target after flank -> bc1_only
+	if front_hit is not None:
+		target_start = front_hit["end"]
+	else:
+		# No flank found; estimate target starts after segment_len
+		target_start = segment_len
+
+	remaining = read_len - target_start
+	if remaining < min_target_length:
+		return "bc1_only"
+
+	# Step 4: Find rear flank (RC of mask2_front) in last segment_len region
+	rear_search_start = max(0, read_len - segment_len)
+	rear_hit = find_flank_position(
+		read_seq, flank_rev_front, rear_search_start, read_len
+	)
+
+	# Step 5: full_length check
+	if bc_end_conf >= confidence.full_length_threshold and rear_hit is not None:
+		return "full_length"
+
+	# Step 6: bc1_target_bc2 (moderate end barcode confidence)
+	if confidence.start_barcode_min <= bc_end_conf < confidence.full_length_threshold:
+		return "bc1_target_bc2"
+
+	# Step 7: default
+	return "bc1_target"
 
 def parse_bam_filename(bam_path: Path) -> Tuple[str, str, int, int]:
 	"""
@@ -94,15 +188,16 @@ def insert_target(cursor: sqlite3.Cursor, tgt_id: str, tgt_seq: str, tgt_len: in
 
 
 def insert_read(cursor: sqlite3.Cursor, data: Tuple) -> None:
-	"""Inserts a single processed read record (20 columns)."""
+	"""Inserts a single processed read record (21 columns)."""
 	cursor.execute('''
 		INSERT OR IGNORE INTO Reads (
 			uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
 			model_tier, model_ver, trim, mod_bitflag,
 			ed, q_bc, q_ld, ER,
 			bc_start_id, bc_start_ed, bc_start_conf,
-			bc_end_id, bc_end_ed, bc_end_conf
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			bc_end_id, bc_end_ed, bc_end_conf,
+			trunc_level
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	''', data)
 
 
@@ -171,6 +266,8 @@ parser.add_argument("--full-construct", action="store_true", default=False,
 	help="Force full construct alignment for all reads")
 parser.add_argument("--split-bams", required=False, default=None,
 	help="Output directory for optional per-barcode BAMs")
+parser.add_argument("-c", "--construct",
+	help="Construct TOML file (enables truncation detection)")
 parser.add_argument("--tag", action="store_true", default=False,
 	help="Write BC tags (BS, BE, BA) to output BAM")
 args = parser.parse_args()
@@ -241,6 +338,28 @@ if CLASSIFICATION_MODE:
 	missing_refs = aliases - set(references.keys())
 	if missing_refs:
 		sys.exit(f"[ingest] Error: Missing reference FASTAs for aliases: {missing_refs}")
+
+	# --- Parse construct TOML if provided ---
+	construct_cfg = None
+	flank_front = None
+	flank_rear = None
+	flank_rev_front = None
+
+	if args.construct:
+		construct_cfg = parse_construct_toml(Path(args.construct))
+		print(f"[ingest] Construct TOML loaded: {construct_cfg.arrangement.name}")
+
+		# Use TOML targets for barcode_pair_to_alias if not already set from -ss
+		# (-ss takes precedence when both are provided)
+		if not barcode_pair_to_alias:
+			barcode_pair_to_alias = construct_cfg.barcode_pair_to_alias()
+			print(f"[ingest] Using TOML targets for barcode pairing: {len(barcode_pair_to_alias)} pairs")
+
+		# Use TOML flanks
+		flank_front = construct_cfg.flank_front    # mask1_rear
+		flank_rear = construct_cfg.flank_rear      # mask2_front
+		flank_rev_front = reverse_complement(flank_rear) if flank_rear else ""
+		print(f"[ingest] Truncation detection enabled (flank_front={flank_front}, flank_rear={flank_rear})")
 
 	# Load summary
 	print(f"[ingest] Loading Pod5 Summary from {SUMMARY_TSV}...")
@@ -340,13 +459,25 @@ if CLASSIFICATION_MODE:
 					count_unknown_er += 1
 				uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
 
-				# DB Insert (20 columns)
+				# Truncation classification
+				trunc_level = None
+				if construct_cfg:
+					trunc_level = classify_truncation(
+						seq, bc_start_conf, bc_end_conf,
+						bc_start_ed, bc_end_ed,
+						flank_front, flank_rear, flank_rev_front,
+						SEGMENT_LEN, construct_cfg.confidence,
+						construct_cfg.truncation.min_target_length,
+					)
+
+				# DB Insert (21 columns)
 				read_data = (
 					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
 					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
 					ed, q_bc, q_ld, er_val,
 					bc_start_id, bc_start_ed, bc_start_conf,
-					bc_end_id, bc_end_ed, bc_end_conf
+					bc_end_id, bc_end_ed, bc_end_conf,
+					trunc_level,
 				)
 				insert_read(c, read_data)
 
@@ -477,13 +608,14 @@ else:
 					count_unknown_er += 1
 				uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
 
-				# DB Insert (20 columns, barcode fields are NULL)
+				# DB Insert (21 columns, barcode fields are NULL)
 				read_data = (
 					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
 					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
 					ed, q_bc, q_ld, er_val,
 					None, None, None,
-					None, None, None
+					None, None, None,
+					None
 				)
 				insert_read(c, read_data)
 
