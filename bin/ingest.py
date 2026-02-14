@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # ingest.py
 # Main processing script: BAM tagging, Metric Calculation, DB Ingestion
+# Supports two modes:
+#   1. Classification mode  (-ss / -rd) : barcode demultiplexing + per-target alignment
+#   2. Single-target mode   (-r)        : original behaviour, backward compatible
 
 import argparse
 import sys
@@ -11,7 +14,17 @@ import edlib
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Tuple, Any
+from typing import Tuple, Any, Dict, Optional
+
+from barcodes import BARCODES, BARCODE_LENGTH, classify_barcode, reverse_complement
+from sample_sheet import parse_sample_sheet, detect_barcode_ambiguity
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+SEGMENT_LEN = 100  # bp window for barcode search at read start/end
 
 
 #########
@@ -81,14 +94,56 @@ def insert_target(cursor: sqlite3.Cursor, tgt_id: str, tgt_seq: str, tgt_len: in
 
 
 def insert_read(cursor: sqlite3.Cursor, data: Tuple) -> None:
-	"""Inserts a single processed read record."""
+	"""Inserts a single processed read record (20 columns)."""
 	cursor.execute('''
 		INSERT OR IGNORE INTO Reads (
 			uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
 			model_tier, model_ver, trim, mod_bitflag,
-			ed, q_bc, q_ld, ER
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ed, q_bc, q_ld, ER,
+			bc_start_id, bc_start_ed, bc_start_conf,
+			bc_end_id, bc_end_ed, bc_end_conf
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	''', data)
+
+
+def load_references(ref_dir: Path) -> Dict[str, Tuple[str, int]]:
+	"""Load all FASTA files from a directory.
+
+	Globs for *.fasta and *.fa files. Each file should contain a single
+	sequence with a header line (>name).
+
+	Parameters
+	----------
+	ref_dir : Path
+		Directory containing reference FASTA files.
+
+	Returns
+	-------
+	dict
+		Mapping of alias (header name) to (sequence, length).
+	"""
+	refs: Dict[str, Tuple[str, int]] = {}
+
+	for pattern in ("*.fasta", "*.fa"):
+		for fasta_path in ref_dir.glob(pattern):
+			tgt_id = None
+			seq_parts = []
+
+			with open(fasta_path, 'r') as f:
+				for line in f:
+					line = line.strip()
+					if not line:
+						continue
+					if line.startswith('>'):
+						tgt_id = line[1:]
+					else:
+						seq_parts.append(line)
+
+			if tgt_id and seq_parts:
+				seq = "".join(seq_parts)
+				refs[tgt_id] = (seq, len(seq))
+
+	return refs
 
 
 ############
@@ -102,12 +157,22 @@ parser.add_argument("-b", "--bam", required=True,
 	help="Input uBAM file")
 parser.add_argument("-s", "--summary", required=True,
 	help="Pod5 summary TSV")
-parser.add_argument("-r", "--ref", required=True,
-	help="Target FASTA")
+parser.add_argument("-r", "--ref", required=False, default=None,
+	help="Target FASTA (single-target mode)")
 parser.add_argument("-d", "--database", required=True,
 	help="Target SQLite DB")
 parser.add_argument("-o", "--output_bam", required=True,
 	help="Output tagged BAM")
+parser.add_argument("-ss", "--sample-sheet", required=False, default=None,
+	help="MinKNOW sample sheet CSV (enables classification mode)")
+parser.add_argument("-rd", "--ref-dir", required=False, default=None,
+	help="Directory of per-target reference FASTAs")
+parser.add_argument("--full-construct", action="store_true", default=False,
+	help="Force full construct alignment for all reads")
+parser.add_argument("--split-bams", required=False, default=None,
+	help="Output directory for optional per-barcode BAMs")
+parser.add_argument("--tag", action="store_true", default=False,
+	help="Write BC tags (BS, BE, BA) to output BAM")
 args = parser.parse_args()
 
 
@@ -118,9 +183,14 @@ args = parser.parse_args()
 EXP_ID = args.expid
 INPUT_BAM = Path(args.bam)
 SUMMARY_TSV = Path(args.summary)
-REF_FASTA = Path(args.ref)
 DB_PATH = Path(args.database)
 OUTPUT_BAM = Path(args.output_bam)
+
+# Determine mode
+CLASSIFICATION_MODE = args.sample_sheet is not None and args.ref_dir is not None
+
+if not CLASSIFICATION_MODE and args.ref is None:
+	sys.exit("[ingest] Error: Either -r (single-target) or -ss/-rd (classification) must be provided.")
 
 MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG = parse_bam_filename(INPUT_BAM)
 
@@ -131,104 +201,306 @@ print(f"[ingest] Run Metadata:\n  Exp: {EXP_ID}\n  Tier: {MODEL_TIER}\n  Ver: {M
 # main #
 ########
 
-tgt_id = None
-tgt_seq_parts = []
+if CLASSIFICATION_MODE:
+	# -----------------------------------------------------------------------
+	# Classification mode
+	# -----------------------------------------------------------------------
+	SS_PATH = Path(args.sample_sheet)
+	REF_DIR = Path(args.ref_dir)
 
-try:
-	with open(REF_FASTA, 'r') as f:
-		for line in f:
-			line = line.strip()
-			if not line: continue
-			if line.startswith('>'):
-				tgt_id = line[1:]
-			else:
-				tgt_seq_parts.append(line)
+	print(f"[ingest] Classification mode enabled")
+	print(f"  Sample sheet: {SS_PATH}")
+	print(f"  Ref dir:      {REF_DIR}")
 
-	tgt_seq = "".join(tgt_seq_parts)
-	if not tgt_id or not tgt_seq:
-		raise ValueError("Empty ID or Sequence")
+	# Parse sample sheet -> barcode pair to alias mapping
+	barcode_pair_to_alias = parse_sample_sheet(SS_PATH)
+	print(f"[ingest] Sample sheet: {len(barcode_pair_to_alias)} barcode pairs loaded")
 
-	tgt_len = len(tgt_seq)
-	print(f"[ingest] Target Loaded: {tgt_id} ({tgt_len} bp)")
+	# Check ambiguity
+	is_ambiguous = detect_barcode_ambiguity(barcode_pair_to_alias)
+	if is_ambiguous or args.full_construct:
+		print("[ingest] Barcode ambiguity detected or --full-construct forced: using full construct alignment")
 
-except Exception as e:
-	sys.exit(f"[ingest] Error loading FASTA: {e}")
+	# Build expected_barcodes: only barcodes appearing in sample sheet
+	used_barcodes = set()
+	for (bc_up, bc_down) in barcode_pair_to_alias.keys():
+		used_barcodes.add(bc_up)
+		used_barcodes.add(bc_down)
 
-print(f"[ingest] Loading Pod5 Summary from {SUMMARY_TSV}...")
+	expected_barcodes = {bc_id: BARCODES[bc_id] for bc_id in used_barcodes if bc_id in BARCODES}
+	expected_barcodes_rc = {bc_id: reverse_complement(seq) for bc_id, seq in expected_barcodes.items()}
 
-try:
-	summary_df = pd.read_csv(SUMMARY_TSV, sep='\t', usecols=['read_id', 'end_reason'])
-	end_reason_map = pd.Series(summary_df.end_reason.values, index=summary_df.read_id).to_dict()
-	print(f"[ingest] Loaded {len(end_reason_map)} records.")
-except Exception as e:
-	sys.exit(f"[ingest] Error loading summary TSV: {e}")
+	print(f"[ingest] Expected barcodes: {sorted(expected_barcodes.keys())}")
 
-with sqlite3.connect(DB_PATH) as conn:
-	c = conn.cursor()
+	# Load reference FASTAs
+	references = load_references(REF_DIR)
+	print(f"[ingest] Loaded {len(references)} references from {REF_DIR}")
 
-	insert_target(c, tgt_id, tgt_seq, tgt_len)
-	conn.commit()
-	save_verbosity = pysam.set_verbosity(0)
+	# Validate: every alias in sample sheet must have a matching reference
+	aliases = set(barcode_pair_to_alias.values())
+	missing_refs = aliases - set(references.keys())
+	if missing_refs:
+		sys.exit(f"[ingest] Error: Missing reference FASTAs for aliases: {missing_refs}")
 
-	with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as bam_in, \
-			pysam.AlignmentFile(OUTPUT_BAM, "wb", template=bam_in) as bam_out:
+	# Load summary
+	print(f"[ingest] Loading Pod5 Summary from {SUMMARY_TSV}...")
+	try:
+		summary_df = pd.read_csv(SUMMARY_TSV, sep='\t', usecols=['read_id', 'end_reason'])
+		end_reason_map = pd.Series(summary_df.end_reason.values, index=summary_df.read_id).to_dict()
+		print(f"[ingest] Loaded {len(end_reason_map)} records.")
+	except Exception as e:
+		sys.exit(f"[ingest] Error loading summary TSV: {e}")
 
-		pysam.set_verbosity(save_verbosity)
-		print("[ingest] Processing reads...")
+	# Insert ALL targets into DB
+	with sqlite3.connect(DB_PATH) as conn:
+		c = conn.cursor()
 
-		count_total = 0
-		count_processed = 0
-		count_skipped = 0
-		count_unknown_er = 0
+		for alias, (ref_seq, ref_len) in references.items():
+			insert_target(c, alias, ref_seq, ref_len)
+		conn.commit()
 
-		for read in bam_in:
-			count_total += 1
-			seq = read.query_sequence
-			quals = read.query_qualities
+		# Optional: split BAMs
+		split_writers: Dict[str, pysam.AlignmentFile] = {}
+		split_dir: Optional[Path] = None
+		if args.split_bams:
+			split_dir = Path(args.split_bams)
+			split_dir.mkdir(parents=True, exist_ok=True)
 
-			if not seq or not quals:
-				count_skipped += 1
-				continue
+		save_verbosity = pysam.set_verbosity(0)
 
-			read_id = read.query_name
-			read_len = len(seq)
+		with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as bam_in, \
+				pysam.AlignmentFile(OUTPUT_BAM, "wb", template=bam_in) as bam_out:
 
-			# Metrics
-			q_bc = calculate_q_bc(quals)
+			pysam.set_verbosity(save_verbosity)
+			print("[ingest] Processing reads (classification mode)...")
 
-			# Alignment
-			align_res = edlib.align(seq, tgt_seq, mode="NW", task="distance")
-			ed = align_res["editDistance"]
-			q_ld = calculate_q_ld(ed, tgt_len)
+			count_total = 0
+			count_processed = 0
+			count_skipped = 0
+			count_unknown_er = 0
+			count_matched = 0
+			count_unmatched = 0
 
-			# Metadata
-			er_val = end_reason_map.get(read_id, "unknown")
-			if er_val == "unknown":
-				count_unknown_er += 1
-			uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
+			# Per-alias counts for classification summary
+			alias_counts: Dict[str, int] = {}
 
-			# DB Insert
-			read_data = (
-				uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
-				MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
-				ed, q_bc, q_ld, er_val
-			)
-			insert_read(c, read_data)
+			for read in bam_in:
+				count_total += 1
+				seq = read.query_sequence
+				quals = read.query_qualities
 
-			# BAM Write
-			read.set_tag("ER", er_val, value_type="Z")
-			bam_out.write(read)
+				if not seq or not quals:
+					count_skipped += 1
+					continue
 
-			count_processed += 1
-			if count_processed % 1000 == 0:
-				print(f"  ...processed {count_processed} reads", end='\r')
+				read_id = read.query_name
+				read_len = len(seq)
 
-	conn.commit()
+				# Metrics
+				q_bc = calculate_q_bc(quals)
 
-print(f"[ingest] Complete.")
-print(f"  - Total Reads:  {count_total}")
-print(f"  - Processed:    {count_processed}")
-print(f"  - Skipped:      {count_skipped}")
-print(f"  - Unknown ER:   {count_unknown_er}")
-print(f"  - Output DB:    {DB_PATH}")
-print(f"  - Output BAM:   {OUTPUT_BAM}")
+				# --- Barcode classification ---
+				# Start: first SEGMENT_LEN bp
+				start_segment = seq[:SEGMENT_LEN]
+				start_result = classify_barcode(start_segment, expected_barcodes)
+				bc_start_id = start_result["barcode_id"]
+				bc_start_ed = start_result["edit_distance"]
+				bc_start_conf = start_result["confidence"]
+
+				# End: last SEGMENT_LEN bp, classify against RC barcodes
+				end_segment = seq[-SEGMENT_LEN:]
+				end_result = classify_barcode(end_segment, expected_barcodes_rc)
+				bc_end_id = end_result["barcode_id"]
+				bc_end_ed = end_result["edit_distance"]
+				bc_end_conf = end_result["confidence"]
+
+				# --- Target assignment from barcode pair ---
+				pair_key = (bc_start_id, bc_end_id)
+				alias = barcode_pair_to_alias.get(pair_key)
+
+				if alias is not None:
+					# Matched pair -> align against assigned target
+					ref_seq, ref_len = references[alias]
+					align_res = edlib.align(seq, ref_seq, mode="NW", task="distance")
+					ed = align_res["editDistance"]
+					q_ld = calculate_q_ld(ed, ref_len)
+					tgt_id = alias
+					count_matched += 1
+					alias_counts[alias] = alias_counts.get(alias, 0) + 1
+				else:
+					# Unmatched pair
+					tgt_id = f"unmatched_{bc_start_id}_{bc_end_id}"
+					ed = None
+					q_ld = None
+					count_unmatched += 1
+
+				# Metadata
+				er_val = end_reason_map.get(read_id, "unknown")
+				if er_val == "unknown":
+					count_unknown_er += 1
+				uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
+
+				# DB Insert (20 columns)
+				read_data = (
+					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
+					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
+					ed, q_bc, q_ld, er_val,
+					bc_start_id, bc_start_ed, bc_start_conf,
+					bc_end_id, bc_end_ed, bc_end_conf
+				)
+				insert_read(c, read_data)
+
+				# BAM tags
+				read.set_tag("ER", er_val, value_type="Z")
+				if args.tag:
+					read.set_tag("BS", bc_start_id, value_type="Z")
+					read.set_tag("BE", bc_end_id, value_type="Z")
+					if alias is not None:
+						read.set_tag("BA", alias, value_type="Z")
+					else:
+						read.set_tag("BA", tgt_id, value_type="Z")
+
+				bam_out.write(read)
+
+				# Optional split BAMs
+				if split_dir is not None and alias is not None:
+					if alias not in split_writers:
+						split_bam_path = split_dir / f"{alias}.bam"
+						split_writers[alias] = pysam.AlignmentFile(
+							str(split_bam_path), "wb", template=bam_in
+						)
+					split_writers[alias].write(read)
+
+				count_processed += 1
+				if count_processed % 1000 == 0:
+					print(f"  ...processed {count_processed} reads", end='\r')
+
+		# Close split BAM writers
+		for writer in split_writers.values():
+			writer.close()
+
+		conn.commit()
+
+	# Classification summary
+	print(f"\n[ingest] Complete (classification mode).")
+	print(f"  - Total Reads:   {count_total}")
+	print(f"  - Processed:     {count_processed}")
+	print(f"  - Skipped:       {count_skipped}")
+	print(f"  - Unknown ER:    {count_unknown_er}")
+	print(f"  - Matched:       {count_matched}")
+	print(f"  - Unmatched:     {count_unmatched}")
+	print(f"  - Per-target breakdown:")
+	for alias_name in sorted(alias_counts.keys()):
+		print(f"      {alias_name}: {alias_counts[alias_name]}")
+	print(f"  - Output DB:     {DB_PATH}")
+	print(f"  - Output BAM:    {OUTPUT_BAM}")
+
+else:
+	# -----------------------------------------------------------------------
+	# Single-target mode (backward compatible)
+	# -----------------------------------------------------------------------
+	REF_FASTA = Path(args.ref)
+
+	tgt_id = None
+	tgt_seq_parts = []
+
+	try:
+		with open(REF_FASTA, 'r') as f:
+			for line in f:
+				line = line.strip()
+				if not line: continue
+				if line.startswith('>'):
+					tgt_id = line[1:]
+				else:
+					tgt_seq_parts.append(line)
+
+		tgt_seq = "".join(tgt_seq_parts)
+		if not tgt_id or not tgt_seq:
+			raise ValueError("Empty ID or Sequence")
+
+		tgt_len = len(tgt_seq)
+		print(f"[ingest] Target Loaded: {tgt_id} ({tgt_len} bp)")
+
+	except Exception as e:
+		sys.exit(f"[ingest] Error loading FASTA: {e}")
+
+	print(f"[ingest] Loading Pod5 Summary from {SUMMARY_TSV}...")
+
+	try:
+		summary_df = pd.read_csv(SUMMARY_TSV, sep='\t', usecols=['read_id', 'end_reason'])
+		end_reason_map = pd.Series(summary_df.end_reason.values, index=summary_df.read_id).to_dict()
+		print(f"[ingest] Loaded {len(end_reason_map)} records.")
+	except Exception as e:
+		sys.exit(f"[ingest] Error loading summary TSV: {e}")
+
+	with sqlite3.connect(DB_PATH) as conn:
+		c = conn.cursor()
+
+		insert_target(c, tgt_id, tgt_seq, tgt_len)
+		conn.commit()
+		save_verbosity = pysam.set_verbosity(0)
+
+		with pysam.AlignmentFile(INPUT_BAM, "rb", check_sq=False) as bam_in, \
+				pysam.AlignmentFile(OUTPUT_BAM, "wb", template=bam_in) as bam_out:
+
+			pysam.set_verbosity(save_verbosity)
+			print("[ingest] Processing reads...")
+
+			count_total = 0
+			count_processed = 0
+			count_skipped = 0
+			count_unknown_er = 0
+
+			for read in bam_in:
+				count_total += 1
+				seq = read.query_sequence
+				quals = read.query_qualities
+
+				if not seq or not quals:
+					count_skipped += 1
+					continue
+
+				read_id = read.query_name
+				read_len = len(seq)
+
+				# Metrics
+				q_bc = calculate_q_bc(quals)
+
+				# Alignment
+				align_res = edlib.align(seq, tgt_seq, mode="NW", task="distance")
+				ed = align_res["editDistance"]
+				q_ld = calculate_q_ld(ed, tgt_len)
+
+				# Metadata
+				er_val = end_reason_map.get(read_id, "unknown")
+				if er_val == "unknown":
+					count_unknown_er += 1
+				uniq_id = f"{EXP_ID}_{MODEL_TIER}{MODEL_VER}t{TRIM}m{MOD_BITFLAG}_{read_id}"
+
+				# DB Insert (20 columns, barcode fields are NULL)
+				read_data = (
+					uniq_id, EXP_ID, tgt_id, read_id, seq, read_len,
+					MODEL_TIER, MODEL_VER, TRIM, MOD_BITFLAG,
+					ed, q_bc, q_ld, er_val,
+					None, None, None,
+					None, None, None
+				)
+				insert_read(c, read_data)
+
+				# BAM Write
+				read.set_tag("ER", er_val, value_type="Z")
+				bam_out.write(read)
+
+				count_processed += 1
+				if count_processed % 1000 == 0:
+					print(f"  ...processed {count_processed} reads", end='\r')
+
+		conn.commit()
+
+	print(f"[ingest] Complete.")
+	print(f"  - Total Reads:  {count_total}")
+	print(f"  - Processed:    {count_processed}")
+	print(f"  - Skipped:      {count_skipped}")
+	print(f"  - Unknown ER:   {count_unknown_er}")
+	print(f"  - Output DB:    {DB_PATH}")
+	print(f"  - Output BAM:   {OUTPUT_BAM}")
