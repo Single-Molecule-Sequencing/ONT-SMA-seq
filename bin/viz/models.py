@@ -1,13 +1,15 @@
-"""Pydantic models for SMA-seq experiment configuration.
+"""Pydantic v2 models for SMA-seq experiment configuration.
 
-Defines the data models used by the Config Visualizer for representing
-Dorado barcode scoring, custom arrangements, sample sheets, target references,
-demultiplexing, truncation rules, and the top-level experiment config.
+Defines the data structures used across the config visualizer: scoring
+parameters, arrangement (custom barcode kits), sample sheets, target
+references, demultiplexing, truncation handling, and the top-level
+experiment configuration.
 """
 
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, field_validator
 
@@ -84,13 +86,13 @@ class SampleSheetEntry(BaseModel):
     the barcode names to ``nbNN`` short format.
     """
 
-    flow_cell_id: str
-    kit: str
+    flow_cell_id: str = ""
+    kit: str = ""
     barcode: str
     alias: str
     experiment_id: str = ""
     sample_id: str = ""
-    type: str = ""
+    type: str = "test_sample"
 
     @field_validator("barcode")
     @classmethod
@@ -140,7 +142,7 @@ class TargetRef(BaseModel):
         if not self.sequence:
             return 0.0
         gc_count = sum(1 for base in self.sequence.upper() if base in ("G", "C"))
-        return (gc_count / len(self.sequence)) * 100.0
+        return round((gc_count / len(self.sequence)) * 100.0, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -175,9 +177,9 @@ class DemuxPairEntry(BaseModel):
 class DemultiplexingConfig(BaseModel):
     """Demultiplexing configuration for barcode pair resolution."""
 
-    mode: str  # start_only | end_only | dual
-    start_barcode: str
-    end_barcode: str
+    mode: str = "dual"
+    start_barcode: str = ""
+    end_barcode: str = ""
     pairs: list[DemuxPairEntry] = Field(default_factory=list)
 
 
@@ -189,16 +191,15 @@ class DemultiplexingConfig(BaseModel):
 class TruncationRules(BaseModel):
     """Read classification rules for truncation analysis.
 
-    Each field describes the criteria for a particular read classification
-    category.
+    Each field describes the action to take for a particular read category.
     """
 
-    full: str = "Both barcodes detected with high confidence and full target coverage"
-    trunc_3prime: str = "5' barcode present but 3' barcode missing or low confidence"
-    trunc_target: str = "Both barcodes present but target coverage below threshold"
-    trunc_barcode: str = "Target present but one or both barcodes below confidence threshold"
-    adapter_only: str = "Adapter sequence detected but no barcode or target content"
-    chimeric: str = "Multiple barcode or target signatures suggesting chimeric construct"
+    full: str = "assign_to_target"
+    trunc_3prime: str = "assign_to_target"
+    trunc_target: str = "assign_by_start_barcode"
+    trunc_barcode: str = "assign_by_start_barcode"
+    adapter_only: str = "unclassified"
+    chimeric: str = "flag_for_review"
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +221,9 @@ class AutoReferences(BaseModel):
 class TruncationConfig(BaseModel):
     """Truncation analysis configuration with thresholds and rules."""
 
-    min_barcode_confidence: float
-    min_target_fraction: float
-    adapter_search_window: int
+    min_barcode_confidence: float = 0.5
+    min_target_fraction: float = 0.1
+    adapter_search_window: int = 50
     rules: TruncationRules = Field(default_factory=TruncationRules)
     auto_references: AutoReferences = Field(default_factory=AutoReferences)
 
@@ -235,9 +236,9 @@ class TruncationConfig(BaseModel):
 class ConstructConfig(BaseModel):
     """Describes the physical construct structure (adapters + insert)."""
 
-    adapter_5prime: str
-    adapter_3prime: str
-    insert_type: str  # amplicon | genomic | synthetic
+    adapter_5prime: str = ""
+    adapter_3prime: str = ""
+    insert_type: Literal["amplicon", "genomic", "synthetic"] = "amplicon"
     notes: str = ""
 
 
@@ -262,8 +263,8 @@ class Assumption(BaseModel):
 class QualityMetrics(BaseModel):
     """Quality metric formula documentation strings."""
 
-    q_bc: str
-    q_ld: str
+    q_bc: str = "Probability-averaged Phred: -10*log10(mean(10^(-Qi/10)))"
+    q_ld: str = "-10*log10(min(max(1/L^2, ed/L), 1.0))"
 
 
 # ---------------------------------------------------------------------------
@@ -275,8 +276,8 @@ class ClassificationConfig(BaseModel):
     """Read classification configuration."""
 
     barcode_search_window: int = 100
-    confidence_formula: str
-    ambiguity_triggers_full_construct: bool
+    confidence_formula: str = "1.0 - (ed / barcode_length)"
+    ambiguity_triggers_full_construct: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -316,12 +317,16 @@ class ExperimentConfig(BaseModel):
     assumptions.
     """
 
-    description: str
-    construct: ConstructConfig
-    demultiplexing: DemultiplexingConfig
-    classification: ClassificationConfig
-    quality: QualityMetrics
-    truncation: TruncationConfig
+    description: str = ""
+    construct: ConstructConfig = Field(default_factory=ConstructConfig)
+    demultiplexing: DemultiplexingConfig = Field(
+        default_factory=DemultiplexingConfig
+    )
+    classification: ClassificationConfig = Field(
+        default_factory=ClassificationConfig
+    )
+    quality: QualityMetrics = Field(default_factory=QualityMetrics)
+    truncation: TruncationConfig = Field(default_factory=TruncationConfig)
     assumptions: list[Assumption] = Field(
         default_factory=lambda: [Assumption(**a) for a in _DEFAULT_ASSUMPTIONS],
     )
