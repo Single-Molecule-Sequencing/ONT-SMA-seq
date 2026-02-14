@@ -1,6 +1,202 @@
 {% extends "base.html" %}
 {% block title %}Thresholds - SMA-seq Barcode Calibration{% endblock %}
+{% block head %}
+<script src="/static/thresholds.js"></script>
+{% endblock %}
+
 {% block content %}
 <h2>Threshold Optimization</h2>
-<p>Coming in Task 9: ROC curves and optimal threshold selection.</p>
+
+<p>ROC-based threshold selection for barcode confidence scores. Each curve shows how
+a confidence threshold trades off true positive rate vs. false positive rate.
+Reads with <code>ed / tgt_reflen &lt; 0.1</code> are treated as correctly classified.</p>
+
+<div style="margin-bottom: 1rem;">
+  <label for="target-fpr-select"><strong>Target FPR:</strong></label>
+  <select id="target-fpr-select">
+    <option value="0.01">1%</option>
+    <option value="0.02">2%</option>
+    <option value="0.05" selected>5%</option>
+    <option value="0.10">10%</option>
+    <option value="0.20">20%</option>
+  </select>
+</div>
+
+<div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+  <div style="flex: 1; min-width: 400px;">
+    <h3>bc_start_conf ROC</h3>
+    <div id="roc-start" class="kde-container" style="position: relative;"></div>
+  </div>
+  <div style="flex: 1; min-width: 400px;">
+    <h3>bc_end_conf ROC</h3>
+    <div id="roc-end" class="kde-container" style="position: relative;"></div>
+  </div>
+</div>
+
+<div style="margin-top: 2rem;">
+  <h3>Full-Length Classification ROC</h3>
+  <p>ROC for full-length read classification using <code>bc_end_conf</code>
+  (restricted to reads with <code>bc_start_conf &ge; start_barcode_min</code>).</p>
+  <div id="roc-full-length" class="kde-container" style="position: relative;"></div>
+</div>
+
+<div style="margin-top: 2rem;">
+  <h3>Recommended Thresholds</h3>
+  <div id="threshold-table"></div>
+</div>
+
+<div style="margin-top: 2rem;">
+  <h3>Export Thresholds</h3>
+  <p>Save the recommended thresholds to a TOML configuration file.</p>
+  <form id="export-form" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+    <div>
+      <label for="export-start-min">start_barcode_min</label>
+      <input type="number" id="export-start-min" step="0.01" value="0.60" style="width: 120px;">
+    </div>
+    <div>
+      <label for="export-fl-thresh">full_length_threshold</label>
+      <input type="number" id="export-fl-thresh" step="0.01" value="0.75" style="width: 120px;">
+    </div>
+    <div>
+      <label for="export-flank-err">flank_max_error_rate</label>
+      <input type="number" id="export-flank-err" step="0.01" value="0.50" style="width: 120px;">
+    </div>
+    <div>
+      <label for="export-path">Output path</label>
+      <input type="text" id="export-path" value="thresholds.toml" style="width: 220px;">
+    </div>
+    <button type="submit">Export TOML</button>
+  </form>
+  <div id="export-result" style="margin-top: 0.5rem;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  let currentTargetFPR = 0.05;
+  let allRecommendations = [];
+
+  function getDbIndex() {
+    return window.currentDb || 0;
+  }
+
+  function loadROCData() {
+    const db = getDbIndex();
+
+    // Load ROC for bc_start_conf
+    fetch(`/api/roc?confidence_column=bc_start_conf&db=${db}`)
+      .then(r => r.json())
+      .then(data => {
+        renderROC('roc-start', data, {
+          title: 'bc_start_conf',
+          recommendedThreshold: data.recommended_threshold,
+          onPointClick: function(t) {
+            document.getElementById('export-start-min').value = t.toFixed(4);
+          },
+        });
+      });
+
+    // Load ROC for bc_end_conf
+    fetch(`/api/roc?confidence_column=bc_end_conf&db=${db}`)
+      .then(r => r.json())
+      .then(data => {
+        renderROC('roc-end', data, {
+          title: 'bc_end_conf',
+          recommendedThreshold: data.recommended_threshold,
+          onPointClick: function(t) {
+            document.getElementById('export-fl-thresh').value = t.toFixed(4);
+          },
+        });
+      });
+
+    // Load ROC for full-length classification
+    fetch(`/api/roc?confidence_column=full_length&db=${db}`)
+      .then(r => r.json())
+      .then(data => {
+        renderROC('roc-full-length', data, {
+          title: 'Full-Length Classification',
+          recommendedThreshold: data.recommended_threshold,
+        });
+      });
+
+    // Load recommendations
+    loadRecommendations();
+  }
+
+  function loadRecommendations() {
+    const db = getDbIndex();
+    const fpr = currentTargetFPR;
+
+    const columns = ['bc_start_conf', 'bc_end_conf', 'full_length'];
+    const promises = columns.map(col =>
+      fetch(`/api/recommend?confidence_column=${col}&target_fpr=${fpr}&db=${db}`)
+        .then(r => r.json())
+        .then(data => Object.assign(data, { column: col }))
+    );
+
+    Promise.all(promises).then(results => {
+      allRecommendations = results;
+      renderThresholdTable('threshold-table', results);
+
+      // Update export form with recommended values
+      for (const rec of results) {
+        if (rec.column === 'bc_start_conf' && rec.threshold) {
+          document.getElementById('export-start-min').value = rec.threshold.toFixed(4);
+        }
+        if (rec.column === 'bc_end_conf' && rec.threshold) {
+          document.getElementById('export-fl-thresh').value = rec.threshold.toFixed(4);
+        }
+      }
+    });
+  }
+
+  // Target FPR selector
+  document.getElementById('target-fpr-select').addEventListener('change', function() {
+    currentTargetFPR = parseFloat(this.value);
+    loadRecommendations();
+  });
+
+  // Export form
+  document.getElementById('export-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const body = {
+      start_barcode_min: parseFloat(document.getElementById('export-start-min').value),
+      full_length_threshold: parseFloat(document.getElementById('export-fl-thresh').value),
+      flank_max_error_rate: parseFloat(document.getElementById('export-flank-err').value),
+      output_path: document.getElementById('export-path').value,
+    };
+
+    fetch('/api/export-thresholds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    .then(r => r.json())
+    .then(data => {
+      const resultDiv = document.getElementById('export-result');
+      if (data.status === 'ok') {
+        resultDiv.innerHTML = `<p style="color: green;">Exported to <code>${data.path}</code></p>`;
+      } else {
+        resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error || 'Unknown'}</p>`;
+      }
+    })
+    .catch(err => {
+      document.getElementById('export-result').innerHTML =
+        `<p style="color: red;">Export failed: ${err}</p>`;
+    });
+  });
+
+  // DB selector change
+  const dbSelect = document.getElementById('db-select');
+  if (dbSelect) {
+    dbSelect.addEventListener('change', function() {
+      loadROCData();
+    });
+  }
+
+  // Initial load
+  loadROCData();
+})();
+</script>
 {% endblock %}
