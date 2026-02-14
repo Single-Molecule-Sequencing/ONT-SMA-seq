@@ -1,6 +1,377 @@
 {% extends "base.html" %}
 {% block title %}Compare - SMA-seq Barcode Calibration{% endblock %}
+{% block head %}
+<script src="/static/distributions.js"></script>
+<style>
+  .compare-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .compare-controls label {
+    font-weight: bold;
+    margin-right: 0.25rem;
+  }
+  .compare-controls select {
+    min-width: 160px;
+    margin-bottom: 0;
+  }
+  .mode-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .mode-tabs button {
+    padding: 0.4rem 0.8rem;
+  }
+  .mode-tabs button.active {
+    font-weight: bold;
+  }
+  .summary-table {
+    width: 100%;
+    margin-bottom: 2rem;
+    font-size: 0.9rem;
+  }
+  .summary-table th {
+    text-align: left;
+    white-space: nowrap;
+  }
+  .summary-table td {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .summary-table td:first-child {
+    text-align: left;
+    font-weight: bold;
+  }
+  .panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+    gap: 1rem;
+  }
+  .panel-grid .panel-item {
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+  .panel-item h4 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  #overlay-plot {
+    margin-bottom: 1.5rem;
+  }
+  .proportion-bars {
+    display: flex;
+    height: 18px;
+    border-radius: 3px;
+    overflow: hidden;
+    width: 100%;
+  }
+  .proportion-bars span {
+    display: inline-block;
+    height: 100%;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <h2>Cross-Experiment Comparison</h2>
-<p>Coming in Task 10: Compare calibration results across experiments.</p>
+
+{% if db_names|length < 2 %}
+<article>
+  <p>Load multiple databases to enable cross-experiment comparison.</p>
+  <p>Usage: <code>python -m calibrate_viz.app db1.db db2.db [db3.db ...]</code></p>
+</article>
+{% else %}
+
+<div class="compare-controls">
+  <div>
+    <label for="column-select">Metric:</label>
+    <select id="column-select">
+      <option value="readlen" selected>Read Length</option>
+      <option value="signal_duration_s">Signal Duration</option>
+      <option value="mean_qscore">Q-Score</option>
+      <option value="bc_start_conf">Barcode Start Conf.</option>
+      <option value="bc_end_conf">Barcode End Conf.</option>
+      <option value="ed">Edit Distance</option>
+    </select>
+  </div>
+</div>
+
+<div class="mode-tabs" id="mode-tabs">
+  <button class="active" data-mode="overlay">Overlay</button>
+  <button data-mode="side-by-side">Side-by-Side</button>
+</div>
+
+<div id="overlay-plot" class="kde-container"></div>
+<div id="panel-plot" class="panel-grid" style="display:none;"></div>
+
+<h3>Experiment Summary</h3>
+<div id="summary-table-container">
+  <p>Loading summary...</p>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if db_names|length >= 2 %}
+<script>
+(function() {
+  const modeTabs = document.getElementById('mode-tabs');
+  const columnSelect = document.getElementById('column-select');
+  const overlayContainer = document.getElementById('overlay-plot');
+  const panelContainer = document.getElementById('panel-plot');
+  const summaryContainer = document.getElementById('summary-table-container');
+
+  let currentMode = 'overlay';
+  let currentColumn = 'readlen';
+
+  const dbNames = {{ db_names | tojson }};
+  const colors = d3.scaleOrdinal(d3.schemeTableau10).domain(dbNames);
+
+  // -----------------------------------------------------------------------
+  // Mode tab switching
+  // -----------------------------------------------------------------------
+  modeTabs.addEventListener('click', function(e) {
+    if (e.target.tagName !== 'BUTTON') return;
+    modeTabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    currentMode = e.target.dataset.mode;
+    updatePlots();
+  });
+
+  columnSelect.addEventListener('change', function() {
+    currentColumn = this.value;
+    updatePlots();
+  });
+
+  // -----------------------------------------------------------------------
+  // Overlay plot
+  // -----------------------------------------------------------------------
+  function renderOverlay(data) {
+    overlayContainer.innerHTML = '';
+    if (!data || data.length === 0) {
+      overlayContainer.innerHTML = '<p>No data available.</p>';
+      return;
+    }
+
+    // Convert overlay data to grouped KDE format for reuse of renderKDE
+    const groups = {};
+    const peaks = {};
+    for (const entry of data) {
+      if (entry.x.length === 0) continue;
+      groups[entry.db_name] = {
+        x: entry.x,
+        y: entry.y,
+        count: entry.count,
+      };
+      peaks[entry.db_name] = entry.peaks || [];
+    }
+
+    if (Object.keys(groups).length === 0) {
+      overlayContainer.innerHTML = '<p>No data with sufficient reads for KDE.</p>';
+      return;
+    }
+
+    const columnLabels = {
+      readlen: 'Read Length (bp)',
+      signal_duration_s: 'Signal Duration (s)',
+      mean_qscore: 'Mean Q-Score',
+      bc_start_conf: 'Barcode Start Confidence',
+      bc_end_conf: 'Barcode End Confidence',
+      ed: 'Edit Distance',
+    };
+
+    renderKDE('overlay-plot', { groups, peaks }, {
+      xlabel: columnLabels[currentColumn] || currentColumn,
+      ylabel: 'Density',
+      column: currentColumn,
+      thresholds: [],
+      expectedSizes: [],
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Side-by-side panels
+  // -----------------------------------------------------------------------
+  function renderPanels(data) {
+    panelContainer.innerHTML = '';
+    if (!data || data.length === 0) {
+      panelContainer.innerHTML = '<p>No data available.</p>';
+      return;
+    }
+
+    const columnLabels = {
+      readlen: 'Read Length (bp)',
+      signal_duration_s: 'Signal Duration (s)',
+      mean_qscore: 'Mean Q-Score',
+      bc_start_conf: 'Barcode Start Confidence',
+      bc_end_conf: 'Barcode End Confidence',
+      ed: 'Edit Distance',
+    };
+
+    for (const entry of data) {
+      const panel = document.createElement('div');
+      panel.className = 'panel-item';
+
+      const title = document.createElement('h4');
+      title.textContent = entry.db_name + ' (' + entry.count.toLocaleString() + ' reads)';
+      panel.appendChild(title);
+
+      const plotDiv = document.createElement('div');
+      plotDiv.id = 'panel-' + entry.db_name;
+      plotDiv.className = 'kde-container';
+      panel.appendChild(plotDiv);
+      panelContainer.appendChild(panel);
+
+      if (entry.x.length === 0) {
+        plotDiv.innerHTML = '<p>Insufficient data for KDE.</p>';
+        continue;
+      }
+
+      const groups = {};
+      groups[entry.db_name] = { x: entry.x, y: entry.y, count: entry.count };
+      const peaks = {};
+      peaks[entry.db_name] = entry.peaks || [];
+
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        renderKDE(plotDiv.id, { groups, peaks }, {
+          xlabel: columnLabels[currentColumn] || currentColumn,
+          ylabel: 'Density',
+          column: currentColumn,
+          thresholds: [],
+          expectedSizes: [],
+        });
+      }, 0);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Summary table
+  // -----------------------------------------------------------------------
+  function renderSummary(summaries) {
+    if (!summaries || summaries.length === 0) {
+      summaryContainer.innerHTML = '<p>No summary data available.</p>';
+      return;
+    }
+
+    let html = '<table class="summary-table"><thead><tr>';
+    html += '<th>Metric</th>';
+    for (const s of summaries) {
+      html += '<th>' + s.db_name + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+
+    // Total reads
+    html += '<tr><td>Total Reads</td>';
+    for (const s of summaries) html += '<td>' + s.summary.total_reads.toLocaleString() + '</td>';
+    html += '</tr>';
+
+    // Mean read length
+    html += '<tr><td>Mean Read Length</td>';
+    for (const s of summaries) html += '<td>' + s.summary.mean_readlen.toLocaleString(undefined, {maximumFractionDigits:1}) + '</td>';
+    html += '</tr>';
+
+    // Mean signal duration
+    html += '<tr><td>Mean Signal Duration (s)</td>';
+    for (const s of summaries) html += '<td>' + s.summary.mean_signal_duration.toFixed(3) + '</td>';
+    html += '</tr>';
+
+    // Mean Q-score
+    html += '<tr><td>Mean Q-Score</td>';
+    for (const s of summaries) html += '<td>' + s.summary.mean_qscore.toFixed(2) + '</td>';
+    html += '</tr>';
+
+    // Barcode count
+    html += '<tr><td>Unique Barcodes</td>';
+    for (const s of summaries) html += '<td>' + s.summary.barcode_count + '</td>';
+    html += '</tr>';
+
+    // Target count
+    html += '<tr><td>Unique Targets</td>';
+    for (const s of summaries) html += '<td>' + s.summary.target_count + '</td>';
+    html += '</tr>';
+
+    // Truncation proportions
+    const allTruncLevels = new Set();
+    for (const s of summaries) {
+      for (const k of Object.keys(s.summary.trunc_proportions || {})) {
+        allTruncLevels.add(k);
+      }
+    }
+    for (const level of [...allTruncLevels].sort()) {
+      html += '<tr><td>Trunc: ' + level + '</td>';
+      for (const s of summaries) {
+        const val = (s.summary.trunc_proportions || {})[level] || 0;
+        html += '<td>' + (val * 100).toFixed(1) + '%</td>';
+      }
+      html += '</tr>';
+    }
+
+    // End reason proportions
+    const allER = new Set();
+    for (const s of summaries) {
+      for (const k of Object.keys(s.summary.end_reason_proportions || {})) {
+        allER.add(k);
+      }
+    }
+    for (const er of [...allER].sort()) {
+      html += '<tr><td>ER: ' + er + '</td>';
+      for (const s of summaries) {
+        const val = (s.summary.end_reason_proportions || {})[er] || 0;
+        html += '<td>' + (val * 100).toFixed(1) + '%</td>';
+      }
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    summaryContainer.innerHTML = html;
+  }
+
+  // -----------------------------------------------------------------------
+  // Data fetching
+  // -----------------------------------------------------------------------
+  function updatePlots() {
+    const params = new URLSearchParams({ column: currentColumn });
+
+    fetch('/api/compare/overlay?' + params)
+      .then(r => r.json())
+      .then(data => {
+        if (currentMode === 'overlay') {
+          overlayContainer.style.display = '';
+          panelContainer.style.display = 'none';
+          renderOverlay(data);
+        } else {
+          overlayContainer.style.display = 'none';
+          panelContainer.style.display = '';
+          renderPanels(data);
+        }
+      })
+      .catch(err => {
+        console.error('Error loading overlay data:', err);
+        overlayContainer.innerHTML = '<p>Error loading data.</p>';
+      });
+  }
+
+  function loadSummary() {
+    fetch('/api/compare/summary')
+      .then(r => r.json())
+      .then(data => renderSummary(data))
+      .catch(err => {
+        console.error('Error loading summary:', err);
+        summaryContainer.innerHTML = '<p>Error loading summary.</p>';
+      });
+  }
+
+  // Initial load
+  updatePlots();
+  loadSummary();
+})();
+</script>
+{% endif %}
 {% endblock %}

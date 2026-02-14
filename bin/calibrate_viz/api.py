@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 router = APIRouter(prefix="/api")
@@ -479,3 +479,193 @@ async def api_affected_reads(
 
     html += "</tbody></table>"
     return HTMLResponse(html)
+
+
+# ---------------------------------------------------------------------------
+# ROC / threshold optimization endpoints
+# ---------------------------------------------------------------------------
+
+
+def _load_true_false_confs(
+    db_path: Path,
+    confidence_column: str,
+    ed_threshold: float = 0.1,
+) -> tuple[list[float], list[float]]:
+    """Load confidence values split into correct/incorrect classifications.
+
+    A read is correctly classified if ed / tgt_reflen < ed_threshold.
+    For 'full_length' mode, uses bc_end_conf for reads with bc_start_conf >= 0.6,
+    splitting on whether the read is truly full_length (has bc_end_conf and
+    ed/tgt_reflen < ed_threshold).
+
+    Returns (true_confs, false_confs).
+    """
+    import numpy as np
+
+    conn = sqlite3.connect(db_path)
+    try:
+        if confidence_column == "full_length":
+            rows = conn.execute("""
+                SELECT r.bc_end_conf, r.ed, t.tgt_reflen
+                FROM Reads r
+                LEFT JOIN Target t ON r.tgt_id = t.tgt_id
+                WHERE r.bc_start_conf IS NOT NULL
+                  AND r.bc_start_conf >= 0.6
+                  AND r.bc_end_conf IS NOT NULL
+            """).fetchall()
+        else:
+            rows = conn.execute(f"""
+                SELECT r.[{confidence_column}], r.ed, t.tgt_reflen
+                FROM Reads r
+                LEFT JOIN Target t ON r.tgt_id = t.tgt_id
+                WHERE r.[{confidence_column}] IS NOT NULL
+            """).fetchall()
+    finally:
+        conn.close()
+
+    true_confs: list[float] = []
+    false_confs: list[float] = []
+
+    for conf, ed, tgt_reflen in rows:
+        if tgt_reflen and ed is not None and tgt_reflen > 0:
+            if ed / tgt_reflen < ed_threshold:
+                true_confs.append(float(conf))
+            else:
+                false_confs.append(float(conf))
+        else:
+            # No reference alignment info — treat as incorrect
+            false_confs.append(float(conf))
+
+    return true_confs, false_confs
+
+
+@router.get("/roc")
+async def api_roc(
+    confidence_column: str = Query("bc_start_conf"),
+    db: int = Query(0),
+):
+    """Return ROC curve data for a confidence column."""
+    import numpy as np
+    from calibrate_viz.thresholds import compute_roc, recommend_threshold
+
+    db_path = _get_db(db)
+    true_confs_list, false_confs_list = _load_true_false_confs(
+        db_path, confidence_column
+    )
+
+    if not true_confs_list or not false_confs_list:
+        return JSONResponse({
+            "fpr": [],
+            "tpr": [],
+            "thresholds": [],
+            "auc": 0.0,
+            "recommended_threshold": None,
+        })
+
+    true_confs = np.array(true_confs_list)
+    false_confs = np.array(false_confs_list)
+
+    fpr, tpr, thresholds = compute_roc(true_confs, false_confs)
+    auc = float(np.trapz(tpr, fpr))
+
+    rec = recommend_threshold(true_confs, false_confs, target_fpr=0.05)
+
+    return JSONResponse({
+        "fpr": fpr.tolist(),
+        "tpr": tpr.tolist(),
+        "thresholds": thresholds.tolist(),
+        "auc": round(auc, 4),
+        "recommended_threshold": rec["threshold"],
+    })
+
+
+@router.get("/recommend")
+async def api_recommend(
+    confidence_column: str = Query("bc_start_conf"),
+    target_fpr: float = Query(0.05),
+    db: int = Query(0),
+):
+    """Return recommended threshold for a confidence column at target FPR."""
+    import numpy as np
+    from calibrate_viz.thresholds import recommend_threshold
+
+    db_path = _get_db(db)
+    true_confs_list, false_confs_list = _load_true_false_confs(
+        db_path, confidence_column
+    )
+
+    if not true_confs_list or not false_confs_list:
+        return JSONResponse({
+            "threshold": 0.0,
+            "sensitivity": 0.0,
+            "specificity": 0.0,
+            "f1": 0.0,
+            "fpr": 0.0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "reads_affected": 0,
+        })
+
+    true_confs = np.array(true_confs_list)
+    false_confs = np.array(false_confs_list)
+
+    result = recommend_threshold(true_confs, false_confs, target_fpr=target_fpr)
+    return JSONResponse(result)
+
+
+@router.post("/export-thresholds")
+async def api_export_thresholds(request: Request):
+    """Export thresholds to a TOML configuration file."""
+    from calibrate_viz.thresholds import export_thresholds_to_toml
+
+    try:
+        body = await request.json()
+        output_path = Path(body.get("output_path", "thresholds.toml"))
+        start_barcode_min = float(body.get("start_barcode_min", 0.6))
+        full_length_threshold = float(body.get("full_length_threshold", 0.75))
+        flank_max_error_rate = float(body.get("flank_max_error_rate", 0.5))
+
+        export_thresholds_to_toml(
+            output_path=output_path,
+            start_barcode_min=start_barcode_min,
+            full_length_threshold=full_length_threshold,
+            flank_max_error_rate=flank_max_error_rate,
+        )
+
+        return JSONResponse({
+            "status": "ok",
+            "path": str(output_path.resolve()),
+        })
+    except Exception as exc:
+        return JSONResponse(
+            {"status": "error", "error": str(exc)},
+            status_code=500,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Cross-experiment comparison endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/compare/summary")
+async def api_compare_summary():
+    """Return summary metrics for all loaded databases."""
+    from calibrate_viz.comparison import compute_experiment_summary
+
+    results = []
+    for db_path in _db_paths:
+        summary = compute_experiment_summary(db_path)
+        results.append({"db_name": db_path.stem, "summary": summary})
+    return JSONResponse(results)
+
+
+@router.get("/compare/overlay")
+async def api_compare_overlay(
+    column: str = Query("readlen"),
+):
+    """Return overlay KDE data for all loaded databases."""
+    from calibrate_viz.comparison import compute_overlay_distributions
+
+    results = compute_overlay_distributions(_db_paths, column=column)
+    return JSONResponse(results)
