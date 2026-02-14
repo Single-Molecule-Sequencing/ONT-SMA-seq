@@ -1,0 +1,175 @@
+/* SMA-seq Barcode Calibration Visualizer styles */
+
+/* Layout */
+.viz-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.viz-sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid var(--pico-muted-border-color);
+    background: var(--pico-card-background-color);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+}
+
+.viz-sidebar header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.viz-sidebar nav {
+    flex: 1;
+}
+
+.viz-sidebar nav a {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.25rem;
+    border-radius: 0.25rem;
+    text-decoration: none;
+    color: var(--pico-color);
+}
+
+.viz-sidebar nav a:hover {
+    background: var(--pico-muted-border-color);
+}
+
+.viz-sidebar nav a.active {
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+    font-weight: bold;
+}
+
+.viz-sidebar footer {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    color: var(--pico-muted-color);
+}
+
+/* Main content */
+.viz-main {
+    flex: 1;
+    padding: 2rem;
+}
+
+/* Validation badges */
+.badge-ok {
+    color: #2e7d32;
+    font-weight: bold;
+}
+
+.badge-error {
+    color: #c62828;
+    font-weight: bold;
+}
+
+/* Table actions */
+.table-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Inline form helper */
+.inline-form {
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* KDE plot containers */
+.kde-container {
+    margin-bottom: 1rem;
+}
+
+/* Grouping tabs */
+.group-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.group-tabs button {
+    padding: 0.4rem 0.8rem;
+}
+
+.group-tabs button.active {
+    font-weight: bold;
+}
+
+/* Threshold stats table */
+.threshold-stats {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--pico-card-background-color);
+    border-radius: 0.5rem;
+}
+
+/* SVG plot styles */
+.kde-axis text {
+    font-size: 12px;
+}
+
+.kde-curve {
+    fill: none;
+    stroke-width: 2;
+}
+
+.threshold-line {
+    cursor: ew-resize;
+    stroke-width: 2;
+}
+
+.expected-marker {
+    stroke: #999;
+    stroke-dasharray: 4,4;
+}
+
+/* Legend */
+.kde-legend {
+    font-size: 12px;
+}
+
+.kde-legend rect {
+    rx: 2;
+}
+
+/* Peak markers */
+.peak-marker {
+    stroke: #333;
+    stroke-dasharray: 2,2;
+    stroke-width: 1;
+}
+
+/* Threshold drag handle */
+.threshold-handle {
+    fill: rgba(255, 255, 255, 0.8);
+    stroke: inherit;
+    stroke-width: 1.5;
+    cursor: ew-resize;
+}
+
+/* Print media query - hide navigation */
+@media print {
+    .viz-sidebar {
+        display: none;
+    }
+
+    .viz-layout {
+        display: block;
+    }
+
+    .viz-main {
+        padding: 0;
+    }
+}
