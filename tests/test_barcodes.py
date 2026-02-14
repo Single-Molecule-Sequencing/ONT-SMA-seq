@@ -4,13 +4,15 @@ Tests cover:
 - BARCODES dictionary: 96 entries, all 24bp, correct naming, valid DNA
 - reverse_complement: simple, palindrome, empty, roundtrip
 - classify_barcode: perfect match, different barcode, imperfect match, poor match, subset
+- load_barcodes_from_fasta: loading, normalization, validation
 """
 
 import re
+from pathlib import Path
 
 import pytest
 
-from barcodes import BARCODES, BARCODE_LENGTH, classify_barcode, reverse_complement
+from barcodes import BARCODES, BARCODE_LENGTH, classify_barcode, load_barcodes_from_fasta, reverse_complement
 
 
 # ---------------------------------------------------------------------------
@@ -195,3 +197,54 @@ class TestClassifyBarcode:
         assert result["barcode_id"] == "nb10"
         assert result["edit_distance"] == 0
         assert result["confidence"] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# load_barcodes_from_fasta tests
+# ---------------------------------------------------------------------------
+
+
+class TestLoadBarcodesFromFasta:
+    """Validate the load_barcodes_from_fasta function."""
+
+    def test_loads_sequences(self, tmp_path):
+        """Load 2 barcodes from FASTA, verify correct mapping."""
+        fasta_path = tmp_path / "barcodes.fasta"
+        fasta_path.write_text(
+            ">NB01\n"
+            "CACAAAGACACCGACAACTTTCTT\n"
+            ">NB02\n"
+            "ACAGACGACTACAAACGGAATCGA\n"
+        )
+        result = load_barcodes_from_fasta(fasta_path)
+        assert len(result) == 2
+        assert result["nb01"] == "CACAAAGACACCGACAACTTTCTT"
+        assert result["nb02"] == "ACAGACGACTACAAACGGAATCGA"
+
+    def test_normalizes_ids(self, tmp_path):
+        """NB05 in FASTA should become nb05 in dict."""
+        fasta_path = tmp_path / "barcodes.fasta"
+        fasta_path.write_text(
+            ">NB05\n"
+            "AAGGTTACACAAACCCTGGACAAG\n"
+        )
+        result = load_barcodes_from_fasta(fasta_path)
+        assert "nb05" in result
+        assert result["nb05"] == "AAGGTTACACAAACCCTGGACAAG"
+
+    def test_uppercase_sequences(self, tmp_path):
+        """Lowercase sequences in FASTA should be uppercased in dict."""
+        fasta_path = tmp_path / "barcodes.fasta"
+        fasta_path.write_text(
+            ">NB10\n"
+            "gagaggacaaaggtttcaacgctt\n"
+        )
+        result = load_barcodes_from_fasta(fasta_path)
+        assert result["nb10"] == "GAGAGGACAAAGGTTTCAACGCTT"
+
+    def test_raises_on_empty(self, tmp_path):
+        """Empty file should raise ValueError."""
+        fasta_path = tmp_path / "empty.fasta"
+        fasta_path.write_text("")
+        with pytest.raises(ValueError, match="empty|no barcodes"):
+            load_barcodes_from_fasta(fasta_path)

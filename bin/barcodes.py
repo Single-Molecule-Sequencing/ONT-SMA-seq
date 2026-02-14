@@ -6,6 +6,9 @@ barcode classification using edlib semi-global (HW) alignment.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import edlib
 
 # ---------------------------------------------------------------------------
@@ -123,6 +126,76 @@ _COMPLEMENT = str.maketrans("ACGT", "TGCA")
 # ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
+
+
+def load_barcodes_from_fasta(path: Path | str) -> dict[str, str]:
+    """Load barcode sequences from a FASTA file.
+
+    Parameters
+    ----------
+    path : Path | str
+        Path to the FASTA file containing barcode sequences.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of normalized barcode IDs (nb01, nb02, ...) to uppercase sequences.
+
+    Raises
+    ------
+    ValueError
+        If the file is empty or contains invalid barcode headers.
+
+    Notes
+    -----
+    - Headers must match the pattern NB\\d+ (case-insensitive)
+    - IDs are normalized to lowercase (NB05 -> nb05)
+    - Sequences are converted to uppercase
+    """
+    path = Path(path)
+    barcodes: dict[str, str] = {}
+
+    # Pattern to match NB followed by digits (case-insensitive)
+    header_pattern = re.compile(r"^>NB(\d+)", re.IGNORECASE)
+
+    current_id: str | None = None
+    current_seq: list[str] = []
+
+    with path.open("r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith(">"):
+                # Save previous sequence if any
+                if current_id is not None:
+                    barcodes[current_id] = "".join(current_seq).upper()
+
+                # Parse new header
+                match = header_pattern.match(line)
+                if not match:
+                    raise ValueError(
+                        f"Invalid barcode header: {line}. "
+                        "Headers must match NB\\d+ (e.g., NB01, NB02)"
+                    )
+
+                # Normalize to nbXX format
+                barcode_num = match.group(1)
+                current_id = f"nb{barcode_num.zfill(2)}"
+                current_seq = []
+            else:
+                # Accumulate sequence lines
+                current_seq.append(line)
+
+        # Save final sequence
+        if current_id is not None:
+            barcodes[current_id] = "".join(current_seq).upper()
+
+    if not barcodes:
+        raise ValueError(f"No barcodes found in {path}")
+
+    return barcodes
 
 
 def reverse_complement(seq: str) -> str:
