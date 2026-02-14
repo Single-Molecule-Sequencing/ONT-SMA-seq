@@ -326,3 +326,120 @@ def decide_merges(runs: list[dict], max_gap_hours: float = 24.0) -> list[dict]:
         groups.append(group)
 
     return groups
+
+
+# ---------------------------------------------------------------------------
+# Manifest builder
+# ---------------------------------------------------------------------------
+
+
+def build_manifest(experiment_dir: Path, runs: list[dict],
+                   max_gap_hours: float = 24.0) -> dict:
+    """Build the complete manifest JSON from discovered runs."""
+    groups = decide_merges(runs, max_gap_hours)
+
+    # Aggregate experiment-level info from first run
+    first_run = runs[0] if runs else {}
+    barcode_aliases: dict[str, str] = {}
+    seq_summary_paths: list[str] = []
+    pod5_sources: list[str] = []
+    total_pod5 = 0
+    total_bam = 0
+    any_demuxed = False
+
+    for run in runs:
+        barcode_aliases.update(run.get("barcode_aliases", {}))
+        if run.get("sequencing_summary"):
+            seq_summary_paths.append(run["sequencing_summary"])
+        if run.get("pod5_dir"):
+            pod5_sources.append(str(Path(run["run_dir"]) / run["pod5_dir"]))
+        total_pod5 += run.get("pod5_count", 0)
+        total_bam += run.get("bam_count", 0)
+        if run.get("bam_demuxed"):
+            any_demuxed = True
+
+    needs_rebasecall = any_demuxed or total_bam == 0
+
+    manifest = {
+        "experiment_id": first_run.get("experiment_id"),
+        "experiment_dir": str(experiment_dir),
+        "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+        "kit": first_run.get("kit"),
+        "flow_cell_product": first_run.get("flow_cell_product_code"),
+        "software": first_run.get("software", {}),
+        "barcode_aliases": barcode_aliases,
+        "flow_cells": groups,
+        "action": {
+            "needs_rebasecall": needs_rebasecall,
+            "pod5_sources": pod5_sources,
+            "sequencing_summary_paths": seq_summary_paths,
+            "total_pod5_files": total_pod5,
+            "total_bam_files": total_bam,
+        },
+    }
+    return manifest
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main():
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Scan SMA-seq experiment directory and generate manifest"
+    )
+    parser.add_argument("experiment_dir", type=Path,
+                        help="Path to experiment directory")
+    parser.add_argument("-o", "--output", type=Path, required=True,
+                        help="Output manifest JSON path")
+    parser.add_argument("--max-gap", type=float, default=24.0,
+                        help="Max time gap (hours) for auto-merge [%(default)s]")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Always prompt before merging")
+    args = parser.parse_args()
+
+    exp_dir = args.experiment_dir.resolve()
+    if not exp_dir.is_dir():
+        sys.exit(f"[sma_scan] Error: {exp_dir} is not a directory")
+
+    print(f"[sma_scan] Scanning {exp_dir}")
+    runs = discover_runs(exp_dir)
+    print(f"[sma_scan] Found {len(runs)} run(s)")
+
+    for run in runs:
+        fc = run.get("flow_cell_id", "?")
+        pod5 = run.get("pod5_count", 0)
+        bam = run.get("bam_count", 0)
+        demux = " (demuxed)" if run.get("bam_demuxed") else ""
+        print(f"  - {run['run_dir_name']}: FC={fc} pod5={pod5} bam={bam}{demux}")
+
+    manifest = build_manifest(exp_dir, runs, args.max_gap)
+
+    # Print merge decisions
+    for group in manifest["flow_cells"]:
+        fc = group["flow_cell_id"]
+        n_runs = len(group["runs"])
+        decision = group["merge_decision"]
+        gap = group.get("time_gap_hours")
+        if n_runs > 1:
+            print(f"[sma_scan] Flow cell {fc}: {n_runs} runs, "
+                  f"merge={decision}, gap={gap}h")
+            for w in group.get("warnings", []):
+                print(f"  WARNING: {w}")
+
+    if manifest["action"]["needs_rebasecall"]:
+        print("[sma_scan] BAMs need re-basecalling (demuxed or missing)")
+
+    # Write manifest
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with open(args.output, "w") as fh:
+        _json.dump(manifest, fh, indent=2)
+    print(f"[sma_scan] Manifest written to {args.output}")
+
+
+if __name__ == "__main__":
+    main()

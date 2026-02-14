@@ -10,9 +10,11 @@ import pytest
 # Module under test lives in bin/ — add to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
 
+import json as _json
+
 from sma_scan import (
     parse_final_summary, parse_minknow_sample_sheet, parse_report_json,
-    discover_runs, decide_merges,
+    discover_runs, decide_merges, build_manifest,
 )
 
 
@@ -325,3 +327,146 @@ class TestDecideMerges:
         groups = decide_merges(runs, max_gap_hours=24)
         assert groups[0]["merge_decision"] == "review"
         assert any("experiment_id" in w for w in groups[0]["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# build_manifest tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildManifest:
+    def test_manifest_structure(self, tmp_path):
+        runs = [
+            {
+                "run_dir": str(tmp_path / "run1"),
+                "flow_cell_id": "FBD69411",
+                "instrument": "MD-100098",
+                "experiment_id": "my_exp",
+                "kit": "SQK-NBD114-24",
+                "flow_cell_product_code": "FLO-MIN114",
+                "pod5_dir": "pod5_pass",
+                "pod5_count": 12,
+                "bam_dir": "bam_pass",
+                "bam_count": 5,
+                "bam_demuxed": True,
+                "started": "2025-12-28T22:00:00",
+                "stopped": None,
+                "protocol": "seq:FLO:SQK:400",
+                "sequencing_summary": None,
+                "final_summary": None,
+                "sample_sheet": None,
+                "report_json": None,
+                "barcode_aliases": {"barcode02": "V04_2"},
+                "software": {"basecaller_version": "7.11.0"},
+            },
+        ]
+        manifest = build_manifest(tmp_path, runs, max_gap_hours=24)
+        assert manifest["experiment_id"] == "my_exp"
+        assert manifest["kit"] == "SQK-NBD114-24"
+        assert len(manifest["flow_cells"]) == 1
+        assert manifest["action"]["needs_rebasecall"] is True  # demuxed BAMs
+
+    def test_needs_rebasecall_when_no_bams(self, tmp_path):
+        runs = [
+            {
+                "run_dir": str(tmp_path / "run1"),
+                "flow_cell_id": "FBD44097",
+                "instrument": "MD-101527",
+                "experiment_id": "exp",
+                "kit": "K1",
+                "flow_cell_product_code": "FLO-MIN114",
+                "pod5_dir": "pod5_pass",
+                "pod5_count": 51,
+                "bam_dir": None,
+                "bam_count": 0,
+                "bam_demuxed": False,
+                "started": "2026-02-09T18:17:00",
+                "stopped": None,
+                "protocol": "P1",
+                "sequencing_summary": "seq_summary.txt",
+                "final_summary": "final_summary.txt",
+                "sample_sheet": None,
+                "report_json": None,
+                "barcode_aliases": {},
+                "software": {},
+            },
+        ]
+        manifest = build_manifest(tmp_path, runs, max_gap_hours=24)
+        assert manifest["action"]["needs_rebasecall"] is True
+
+    def test_no_rebasecall_when_flat_bams(self, tmp_path):
+        runs = [
+            {
+                "run_dir": str(tmp_path / "run1"),
+                "flow_cell_id": "FBD66244",
+                "instrument": "MD-101527",
+                "experiment_id": "exp",
+                "kit": "K1",
+                "flow_cell_product_code": "FLO-MIN114",
+                "pod5_dir": "pod5_pass",
+                "pod5_count": 10,
+                "bam_dir": "bam_pass",
+                "bam_count": 100,
+                "bam_demuxed": False,
+                "started": "2025-12-30T17:00:00",
+                "stopped": None,
+                "protocol": "P1",
+                "sequencing_summary": None,
+                "final_summary": None,
+                "sample_sheet": None,
+                "report_json": None,
+                "barcode_aliases": {},
+                "software": {},
+            },
+        ]
+        manifest = build_manifest(tmp_path, runs, max_gap_hours=24)
+        assert manifest["action"]["needs_rebasecall"] is False
+
+
+# ---------------------------------------------------------------------------
+# CLI integration test
+# ---------------------------------------------------------------------------
+
+
+class TestScanCLI:
+    def test_cli_produces_manifest(self, tmp_path):
+        """Integration test: run sma_scan.py via subprocess."""
+        exp_dir = tmp_path / "experiment"
+        exp_dir.mkdir()
+        run_dir = exp_dir / "no_sample_id" / "20251229_1055_MD-100098_FBD69411_abc12345"
+        run_dir.mkdir(parents=True)
+
+        # Final summary
+        (run_dir / "final_summary_FBD69411_abc_123.txt").write_text(
+            "instrument=MD-100098\nflow_cell_id=FBD69411\n"
+            "protocol_group_id=test_exp\n"
+            "protocol=seq:FLO:SQK:400\nprotocol_run_id=abc-def\n"
+            "started=2025-12-29T10:00:00\n"
+            "pod5_files_in_final_dest=5\nbam_files_in_final_dest=10\n"
+        )
+        # Pod5 dir
+        pod5_dir = run_dir / "pod5_pass"
+        pod5_dir.mkdir()
+        for i in range(5):
+            (pod5_dir / f"f_{i}.pod5").write_bytes(b"")
+        # Sample sheet
+        (run_dir / "sample_sheet_FBD69411_20251228_abc.csv").write_text(
+            "protocol_run_id,position_id,flow_cell_id,sample_id,experiment_id,"
+            "flow_cell_product_code,kit,barcode,alias,type,rowNumber\n"
+            "abc-def,MD-100098,FBD69411,,test_exp,FLO-MIN114,"
+            "SQK-NBD114-24,barcode02,V04_2,test_sample,1\n"
+        )
+
+        out = tmp_path / "manifest.json"
+        result = subprocess.run(
+            [sys.executable, "bin/sma_scan.py", str(exp_dir), "-o", str(out)],
+            capture_output=True, text=True,
+            cwd="/tmp/ont-sma-seq",
+        )
+        assert result.returncode == 0, result.stderr
+        assert out.exists()
+        manifest = _json.loads(out.read_text())
+        assert manifest["experiment_id"] == "test_exp"
+        assert manifest["kit"] == "SQK-NBD114-24"
+        assert len(manifest["flow_cells"]) == 1
+        assert manifest["action"]["total_pod5_files"] == 5
