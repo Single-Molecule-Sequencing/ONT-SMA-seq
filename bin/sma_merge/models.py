@@ -31,13 +31,3 @@ class RunGroup:
     basecall_model: str
     is_consistent: bool
     issues: list[str] = field(default_factory=list)
-
-
-@dataclass
-class MergeResult:
-    """Result of a merge or subsample operation."""
-
-    merged_pod5: Path
-    output_bam: Path
-    total_reads: int
-    reads_tagged: int

@@ -39,20 +39,16 @@ def tag_bam(
 
     Returns the number of reads successfully tagged.
     """
-    in_af = pysam.AlignmentFile(str(input_bam), check_sq=False)
     output_bam.parent.mkdir(parents=True, exist_ok=True)
-    out_af = pysam.AlignmentFile(str(output_bam), "wb", header=in_af.header)
-
     tagged = 0
-    for read in in_af:
-        rid = read.query_name
-        if rid in pod5_lookup:
-            er, sl = pod5_lookup[rid]
-            read.set_tag("er", er, "Z")
-            read.set_tag("sl", sl, "i")
-            tagged += 1
-        out_af.write(read)
-
-    in_af.close()
-    out_af.close()
+    with pysam.AlignmentFile(str(input_bam), check_sq=False) as in_af:
+        with pysam.AlignmentFile(str(output_bam), "wb", header=in_af.header) as out_af:
+            for read in in_af:
+                rid = read.query_name
+                if rid in pod5_lookup:
+                    er, sl = pod5_lookup[rid]
+                    read.set_tag("er", er, "Z")
+                    read.set_tag("sl", sl, "i")
+                    tagged += 1
+                out_af.write(read)
     return tagged

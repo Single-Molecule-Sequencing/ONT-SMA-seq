@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from sma_merge.discover import discover_runs, format_discovery_table
@@ -128,42 +130,53 @@ def cmd_subsample(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for g in groups:
+        if not g.is_consistent:
+            print(f"\nWARNING: Inconsistent runs in flowcell {g.flow_cell_id}, skipping.")
+            continue
+
         name = g.flow_cell_id
         model = g.basecall_model
         pod5_dirs = [r.pod5_dir for r in g.runs]
+        temp_merged: Path | None = None
 
         if len(pod5_dirs) == 1:
             source_dir = pod5_dirs[0]
         else:
             from sma_merge.basecall import merge_pod5s
-            merged = output_dir / f"{name}_temp_merged.pod5"
+            temp_dir = Path(tempfile.mkdtemp(prefix="sma_merge_"))
+            temp_merged = temp_dir / f"{name}_temp_merged.pod5"
             print(f"Merging POD5 files from {len(pod5_dirs)} runs...")
-            merge_pod5s(pod5_dirs, merged)
-            source_dir = merged.parent
+            merge_pod5s(pod5_dirs, temp_merged)
+            source_dir = temp_dir
 
-        sub_pod5 = output_dir / f"{name}_sub{n_reads}.pod5"
-        print(f"\nSubsampling {n_reads} reads -> {sub_pod5}")
-        selected = subsample_pod5(source_dir, sub_pod5, n_reads=n_reads, seed=seed)
-        print(f"Selected {len(selected)} reads")
+        try:
+            sub_pod5 = output_dir / f"{name}_sub{n_reads}.pod5"
+            print(f"\nSubsampling {n_reads} reads -> {sub_pod5}")
+            selected = subsample_pod5(source_dir, sub_pod5, n_reads=n_reads, seed=seed)
+            print(f"Selected {len(selected)} reads")
 
-        raw_bam = output_dir / f"{name}_sub{n_reads}_raw.bam"
-        print(f"Basecalling with {model} -> {raw_bam}")
-        basecall(
-            pod5_path=sub_pod5,
-            output_bam=raw_bam,
-            model=model,
-            device=device,
-            dorado_path=str(dorado_path) if dorado_path else None,
-        )
+            raw_bam = output_dir / f"{name}_sub{n_reads}_raw.bam"
+            print(f"Basecalling with {model} -> {raw_bam}")
+            basecall(
+                pod5_path=sub_pod5,
+                output_bam=raw_bam,
+                model=model,
+                device=device,
+                dorado_path=str(dorado_path) if dorado_path else None,
+            )
 
-        print("Building end_reason lookup from POD5...")
-        lookup = build_pod5_lookup(sub_pod5)
-        output_bam = output_dir / f"{name}_sub{n_reads}.bam"
-        print(f"Tagging BAM -> {output_bam}")
-        tagged = tag_bam(raw_bam, output_bam, lookup)
-        print(f"Tagged {tagged}/{len(selected)} reads with end_reason")
+            print("Building end_reason lookup from POD5...")
+            lookup = build_pod5_lookup(sub_pod5)
+            output_bam = output_dir / f"{name}_sub{n_reads}.bam"
+            print(f"Tagging BAM -> {output_bam}")
+            tagged = tag_bam(raw_bam, output_bam, lookup)
+            print(f"Tagged {tagged}/{len(selected)} reads with end_reason")
 
-        raw_bam.unlink()
+            raw_bam.unlink()
+        finally:
+            if temp_merged is not None:
+                temp_merged.unlink(missing_ok=True)
+                temp_merged.parent.rmdir()
 
     print("\nDone!")
 

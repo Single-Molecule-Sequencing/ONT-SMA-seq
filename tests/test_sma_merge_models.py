@@ -49,16 +49,3 @@ def test_run_group_creation():
     )
     assert group.is_consistent
     assert len(group.runs) == 1
-
-
-def test_merge_result_creation():
-    from sma_merge.models import MergeResult
-    from pathlib import Path
-
-    result = MergeResult(
-        merged_pod5=Path("/tmp/out/merged.pod5"),
-        output_bam=Path("/tmp/out/merged.bam"),
-        total_reads=5000,
-        reads_tagged=4950,
-    )
-    assert result.total_reads == 5000
