@@ -117,16 +117,16 @@ c.execute('''
 
 # 1. Populate Mods (Static)
 mods_data = [
-	(0, "non"),
-	(1, "6mA"),
-	(2, "5mCG_5hmCG"),
-	(4, "5mC_5hmC"),
-	(8, "4mC_5mC"),
-	(16, "5mC"),
-	(3, "6mA,5mCG_5hmCG"),
-	(5, "6mA,5mC_5hmC"),
-	(9, "6mA,4mC_5mC"),
-	(17, "6mA,5mC")
+	(0,  "non"),
+	(8,  "6mA"),
+	(1,  "5mCG_5hmCG"),
+	(2,  "5mC_5hmC"),
+	(3,  "4mC_5mC"),
+	(4,  "5mC"),
+	(9,  "6mA+5mCG_5hmCG"),
+	(10, "6mA+5mC_5hmC"),
+	(11, "6mA+4mC_5mC"),
+	(12, "6mA+5mC")
 ]
 
 c.executemany(

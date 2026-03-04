@@ -99,18 +99,27 @@ The pipeline is now restructured to operate on a **Per-Target Sequence** basis. 
 
 * **Standard Fields:** Extract `exp_id`, `model_tier` (s/h/f), `model_ver` (e.g., 5.2.0), `trim` (0/1).
 * **Modification Bitflags:**
-    Combinations of modifications are stored as integers (Sum of $2^n$).
+    The flag is a 4-bit integer: **bit 3** encodes the independent `6mA` flag; **bits 2–0** encode the mutually exclusive C-mod as an enum (0 = none).
 
-| Modification   | Bit Value ($2^n$) | Logic                                 |
-| :------------- | :---------------- | :------------------------------------ |
-| **non**        | **0**             | No Modifications                      |
-| **6mA**        | **1**             | Independent (Can coexist with others) |
-| **5mCG_5hmCG** | **2**             | Mutually Exclusive C-Mod              |
-| **5mC_5hmC**   | **4**             | Mutually Exclusive C-Mod              |
-| **4mC_5mC**    | **8**             | Mutually Exclusive C-Mod              |
-| **5mC**        | **16**            | Mutually Exclusive C-Mod              |
+| Modification          | Bit 3 (`6mA`) | Bits 2–0 (C-mod) | Decimal |
+| :-------------------- | :-----------: | :--------------: | :-----: |
+| **non**               |       0       |       000        |  **0**  |
+| **6mA**               |       1       |       000        |  **8**  |
+| **5mCG\_5hmCG**       |       0       |       001        |  **1**  |
+| **5mC\_5hmC**         |       0       |       010        |  **2**  |
+| **4mC\_5mC**          |       0       |       011        |  **3**  |
+| **5mC**               |       0       |       100        |  **4**  |
+| **6mA + 5mCG\_5hmCG** |       1       |       001        |  **9**  |
+| **6mA + 5mC\_5hmC**   |       1       |       010        | **10**  |
+| **6mA + 4mC\_5mC**    |       1       |       011        | **11**  |
+| **6mA + 5mC**         |       1       |       100        | **12**  |
 
-* *Example:* `5mC_5hmC` + `6mA` = $4 + 1 = 5$.
+  ```python
+  has_6mA = flags & 0b1000   # non-zero if 6mA present
+  cmod    = flags & 0b0111   # 0 = none, 1–4 = C-mod variant
+  ```
+
+* *Example:* `5mC_5hmC` + `6mA` = $2 + 8 = 10$.
 
 ---
 
@@ -172,10 +181,10 @@ The pipeline is now restructured to operate on a **Per-Target Sequence** basis. 
 
 **Mods** table (Static Lookup)
 
-| Column        | Type         | Description                  |
-| ------------- | ------------ | ---------------------------- |
-| `mod_bitflag` | **INT (PK)** | Sum of modification flags () |
-| `mods`        | TEXT         | Modifications present        |
+| Column        | Type         | Description                                    |
+| ------------- | ------------ | ---------------------------------------------- |
+| `mod_bitflag` | **INT (PK)** | 4-bit flag: bit 3 = 6mA, bits 2–0 = C-mod enum |
+| `mods`        | TEXT         | Modifications present                          |
 
 ---
 

@@ -118,7 +118,7 @@ if trim not in ["0", "1"]:
 	sys.exit(f"[inputInit] Error: Invalid trim status '{trim_part}' (must end in 0 or 1).")
 
 # 4. Mods
-valid_mod_flags = {"0", "1", "2", "4", "8", "16", "3", "5", "9", "17"}
+valid_mod_flags = {"0", "1", "2", "3", "4", "8", "9", "10", "11", "12"}
 if mods not in valid_mod_flags:
 	sys.exit(f"[inputInit] Error: Invalid modifications '{mods}' in BAM filename.")
 
