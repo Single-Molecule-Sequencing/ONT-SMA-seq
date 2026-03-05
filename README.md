@@ -1,5 +1,7 @@
 # ONT-SMA-seq
 
+[![DOI](https://zenodo.org/badge/1110728589.svg)](https://doi.org/10.5281/zenodo.18872468)
+
 The Single-Molecule-Accuracy-seq protocol for Oxford Nanopore Technology experiments, implemented as a Python package with a SQLite database backend. This workflow processes an unaligned BAM file and its parent Pod5 files for a single target sequence, storing per-read metrics and metadata for downstream analysis.
 
 ## Installation
