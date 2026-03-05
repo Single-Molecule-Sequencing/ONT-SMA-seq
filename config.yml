@@ -3,13 +3,17 @@
 #
 # All paths can be absolute or relative to the working directory.
 
-exp_id:      "FAL12345_20260129-IF_SMA"   # FlowCellID_SampleID_Alias
-bam:         "path/to/reads.bam"          # Raw uBAM (filename encodes metadata)
-pod5_dir:    "path/to/pod5/"              # Raw Pod5 directory
-ref:         "path/to/target.fa"          # Single-sequence reference FASTA
+exp_id:       "FAL12345_20260129-IF_SMA"   # FlowCellID_SampleID_Alias
+bam:          "path/to/reads.bam"          # Raw uBAM (filename encodes metadata)
+model_tier:   "sup"                        # Basecalling model tier (e.g. "sup", "hac", "fast")
+model_ver:    "5.0.0"                      # Basecalling model version
+trim:         "yes"                        # Whether to trim softclips before alignment ("yes"/"no")
+mods_bitflag: "10"
+pod5_dir:     "path/to/pod5/"              # Raw Pod5 directory
+ref:          "path/to/target.fa"          # Single-sequence reference FASTA
 
-outdir:      "Output"                     # Directory for DB output
-summary_tsv: "Output/summary.tsv"         # Intermediate: pod5 end-reason metadata
+outdir:       "Output"                     # Directory for DB output
+summary_tsv:  "Output/summary.tsv"         # Intermediate: pod5 end-reason metadata
 
 # Optional: read length filter (multipliers of tgt_reflen). Reads outside
 # [tgt_reflen * len_min_mult, tgt_reflen * len_max_mult] are skipped before alignment.

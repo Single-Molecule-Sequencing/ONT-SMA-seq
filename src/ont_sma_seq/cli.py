@@ -10,7 +10,83 @@ from ont_sma_seq import meta
 from ont_sma_seq import ingest
 from ont_sma_seq import merge
 
-_REQUIRED_KEYS = ["exp_id", "bam", "pod5_dir", "ref", "outdir", "summary_tsv"]
+_REQUIRED_KEYS = ["bam", "pod5_dir", "ref", "outdir", "summary_tsv"]
+
+
+def _resolve_metadata(cfg):
+	"""
+	Resolves experiment metadata (exp_id, model_tier, model_ver, trim, mods_bitflag)
+	from config and/or BAM filename.
+
+	Raises:
+		ValueError: If any required metadata field is missing or invalid.
+	"""
+	from pathlib import Path
+
+	bam_path = Path(cfg["bam"])
+
+	# Attempt filename parse unconditionally — needed for any blank fields.
+	parsed = None
+	try:
+		parsed = ingest.parse_bam_filename(bam_path)
+	except ValueError:
+		pass
+
+	p_exp_id, p_tier, p_ver, p_trim, p_mods = parsed if parsed else (None, None, None, None, None)
+
+	def _pick(cfg_key, parsed_val):
+		"""Return config value if non-blank, else parsed value, else raise."""
+		val = cfg.get(cfg_key)
+		if val is not None and str(val).strip():
+			return str(val).strip()
+		if parsed_val is not None:
+			return str(parsed_val)
+		raise ValueError(
+			f"'{cfg_key}' is not set in config.yml and could not be derived from "
+			f"the BAM filename. Either use the standard naming scheme or set "
+			f"'{cfg_key}' explicitly in config.yml."
+		)
+
+	exp_id = _pick("exp_id",      p_exp_id)
+	tier   = _pick("model_tier",  p_tier)
+	ver    = _pick("model_ver",   p_ver)
+
+	# trim: config accepts "yes"/"no"/"1"/"0"; BAM filename gives 0/1.
+	trim_raw = cfg.get("trim")
+	if trim_raw is not None and str(trim_raw).strip():
+		t = str(trim_raw).strip().lower()
+		if t in ("yes", "true", "1"):
+			trim = 1
+		elif t in ("no", "false", "0"):
+			trim = 0
+		else:
+			raise ValueError(
+				f"'trim' value '{trim_raw}' is invalid. Use 'yes'/'no' or 1/0."
+			)
+	elif p_trim is not None:
+		trim = int(p_trim)
+	else:
+		raise ValueError(
+			"'trim' is not set in config.yml and could not be derived from the BAM filename."
+		)
+
+	# mods_bitflag: normalize to int.
+	mods_raw = cfg.get("mods_bitflag")
+	if mods_raw is not None and str(mods_raw).strip():
+		try:
+			mods = int(str(mods_raw).strip())
+		except ValueError:
+			raise ValueError(
+				f"'mods_bitflag' value '{mods_raw}' is not a valid integer."
+			)
+	elif p_mods is not None:
+		mods = int(p_mods)
+	else:
+		raise ValueError(
+			"'mods_bitflag' is not set in config.yml and could not be derived from the BAM filename."
+		)
+
+	return exp_id, tier, ver, trim, mods
 
 
 def _step(name, fn):
@@ -38,14 +114,20 @@ def run_pipeline(config_path):
 	if missing:
 		raise ValueError(f"Config missing required keys: {missing}")
 
-	print(f"[run] Pipeline: {cfg['exp_id']}")
-	print(f"[run] Config:   {config_path}")
+	# Resolve experiment metadata early — exits immediately if any field is
+	# unresolvable before any DB work begins.
+	exp_id, tier, ver, trim, mods = _resolve_metadata(cfg)
 
-	db_path = _step("mkdb",   lambda: mkdb.run(exp_id=cfg["exp_id"], out_dir=cfg["outdir"]))
+	print(f"[run] Pipeline: {exp_id}")
+	print(f"[run] Config:   {config_path}")
+	print(f"[run] Metadata: tier={tier}  ver={ver}  trim={trim}  mods={mods}")
+
+	db_path = _step("mkdb",   lambda: mkdb.run(exp_id=exp_id, out_dir=cfg["outdir"]))
 	_step("init",   lambda: init.run(db_path=db_path, ref_fasta=cfg["ref"]))
 	_step("meta",   lambda: meta.run(pod5_input=cfg["pod5_dir"], tsv_output=cfg["summary_tsv"]))
 	_step("ingest", lambda: ingest.run(
 		bam_path=cfg["bam"], db_path=db_path, meta_path=cfg["summary_tsv"],
+		exp_id=exp_id, tier=tier, ver=ver, trim=trim, mods=mods,
 		len_min_mult=cfg.get("len_min_mult", ingest.LENGTH_MIN_MULT),
 		len_max_mult=cfg.get("len_max_mult", ingest.LENGTH_MAX_MULT),
 	))

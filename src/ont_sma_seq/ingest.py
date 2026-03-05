@@ -84,7 +84,8 @@ def load_end_reasons(tsv_path):
 
 
 def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
-        len_min_mult=LENGTH_MIN_MULT, len_max_mult=LENGTH_MAX_MULT):
+        len_min_mult=LENGTH_MIN_MULT, len_max_mult=LENGTH_MAX_MULT,
+        exp_id=None, tier=None, ver=None, trim=None, mods=None):
 	"""
 	Main ingestion logic.
 
@@ -95,9 +96,15 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 		batch_size:   Reads per commit batch.
 		len_min_mult: Minimum read length as a multiplier of tgt_reflen.
 		len_max_mult: Maximum read length as a multiplier of tgt_reflen.
+		exp_id:       Experiment ID override. Parsed from BAM filename if None.
+		tier:         Model tier override (raw token, e.g. 'sup'). Parsed from BAM filename if None.
+		ver:          Model version override. Parsed from BAM filename if None.
+		trim:         Trim flag override (int 0 or 1). Parsed from BAM filename if None.
+		mods:         Mod bitflag override (int). Parsed from BAM filename if None.
 
 	Raises:
-		ValueError: If the BAM filename cannot be parsed or the tier token is unknown.
+		ValueError: If the BAM filename cannot be parsed (and no overrides given), or
+		            the tier token is unknown.
 		RuntimeError: If the DB is missing expected tables, Target is empty, or
 		              mod_bitflag is not present in the Mods table.
 		Any sqlite3 or pysam exception propagates after rollback.
@@ -105,13 +112,20 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 	bam_file = Path(bam_path)
 	db_file = Path(db_path)
 
-	# Parse BAM filename metadata
-	exp_id, tier_raw, ver, trim, mods = parse_bam_filename(bam_file)
+	# Metadata resolution: use explicit overrides when provided (pipeline path),
+	# otherwise fall back to parsing the BAM filename (standalone subcommand path).
+	if any(v is None for v in (exp_id, tier, ver, trim, mods)):
+		parsed_exp_id, parsed_tier, parsed_ver, parsed_trim, parsed_mods = parse_bam_filename(bam_file)
+		if exp_id is None: exp_id = parsed_exp_id
+		if tier   is None: tier   = parsed_tier
+		if ver    is None: ver    = parsed_ver
+		if trim   is None: trim   = parsed_trim
+		if mods   is None: mods   = parsed_mods
 
-	if tier_raw not in TIER_MAP:
+	if tier not in TIER_MAP:
 		raise ValueError(
-			f"[ingest] Unknown model tier '{tier_raw}'. Expected one of {list(TIER_MAP)}.")
-	tier = TIER_MAP[tier_raw]
+			f"[ingest] Unknown model tier '{tier}'. Expected one of {list(TIER_MAP)}.")
+	tier = TIER_MAP[tier]
 
 	print(f"[ingest] Run Metadata:\n  Exp: {exp_id}\n  Tier: {tier}\n  Ver: {ver}\n  Trim: {trim}\n  Mods: {mods}")
 
