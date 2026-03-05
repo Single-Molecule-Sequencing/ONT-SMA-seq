@@ -143,6 +143,7 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 		count_total = 0
 		count_processed = 0
 		count_skipped = 0
+		count_non_primary = 0
 		count_unknown_er = 0
 
 		sql = '''INSERT INTO Reads (
@@ -153,6 +154,13 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 
 		for read in samfile:
 			count_total += 1
+
+			# Supplementary/secondary records are alignment artifacts of the same
+			# physical molecule — skip to avoid duplicate uniq_id on the same read_id.
+			if read.is_supplementary or read.is_secondary:
+				count_non_primary += 1
+				continue
+
 			seq = read.query_sequence
 			quals = read.query_qualities
 
@@ -190,10 +198,11 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 		# Final commit for the last partial batch
 		conn.commit()
 		print(f"\n[ingest] Complete.")
-		print(f"  - Total Reads:  {count_total}")
-		print(f"  - Processed:    {count_processed}")
-		print(f"  - Skipped:      {count_skipped}")
-		print(f"  - Unknown ER:   {count_unknown_er}")
+		print(f"  - Total Records: {count_total}")
+		print(f"  - Non-primary:   {count_non_primary}")
+		print(f"  - Processed:     {count_processed}")
+		print(f"  - Skipped:       {count_skipped}")
+		print(f"  - Unknown ER:    {count_unknown_er}")
 
 	except Exception:
 		conn.rollback()
