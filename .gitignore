@@ -23,6 +23,7 @@ dev/
 data/
 backup/
 old/
+docs/
 
 # Large raw sequencing data
 *.fastq
