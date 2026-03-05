@@ -230,10 +230,10 @@ Stores the single target sequence for this database.
 
 Static lookup table.
 
-| Column        | Type         | Description                   |
-| ------------- | ------------ | ----------------------------- |
+| Column        | Type         | Description                                                     |
+| ------------- | ------------ | --------------------------------------------------------------- |
 | `mod_bitflag` | **INT (PK)** | 4-bit flag: bit 3 = `6mA`, bits 2–0 = C-mod enum (0=none, 1–4). |
-| `mods`        | TEXT         | Modifications present.        |
+| `mods`        | TEXT         | Modifications present.                                          |
 
 ### `Exp` Table
 
