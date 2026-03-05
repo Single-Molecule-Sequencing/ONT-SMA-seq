@@ -44,7 +44,11 @@ def run_pipeline(config_path):
 	db_path = _step("mkdb",   lambda: mkdb.run(exp_id=cfg["exp_id"], out_dir=cfg["outdir"]))
 	_step("init",   lambda: init.run(db_path=db_path, ref_fasta=cfg["ref"]))
 	_step("meta",   lambda: meta.run(pod5_input=cfg["pod5_dir"], tsv_output=cfg["summary_tsv"]))
-	_step("ingest", lambda: ingest.run(bam_path=cfg["bam"], db_path=db_path, meta_path=cfg["summary_tsv"]))
+	_step("ingest", lambda: ingest.run(
+		bam_path=cfg["bam"], db_path=db_path, meta_path=cfg["summary_tsv"],
+		len_min_mult=cfg.get("len_min_mult", ingest.LENGTH_MIN_MULT),
+		len_max_mult=cfg.get("len_max_mult", ingest.LENGTH_MAX_MULT),
+	))
 
 	print(f"\n[run] Pipeline complete.")
 	print(f"  DB: {db_path}")
@@ -83,6 +87,12 @@ def main():
 	parser_ingest.add_argument("-b", "--bam", required=True, help="Input BAM file")
 	parser_ingest.add_argument("-d", "--db", required=True, help="Target database")
 	parser_ingest.add_argument("-m", "--meta", required=True, help="Metadata TSV")
+	parser_ingest.add_argument("--len-min", type=float, default=ingest.LENGTH_MIN_MULT,
+		metavar="MULT",
+		help="Min read length as multiplier of tgt_reflen [%(default)s]")
+	parser_ingest.add_argument("--len-max", type=float, default=ingest.LENGTH_MAX_MULT,
+		metavar="MULT",
+		help="Max read length as multiplier of tgt_reflen [%(default)s]")
 
 	# --- merge ---
 	parser_merge = subparsers.add_parser('merge', help='Merge per-run databases into a master DB')
@@ -110,7 +120,8 @@ def main():
 		elif args.command == 'meta':
 			meta.run(pod5_input=args.input, tsv_output=args.output)
 		elif args.command == 'ingest':
-			ingest.run(bam_path=args.bam, db_path=args.db, meta_path=args.meta)
+			ingest.run(bam_path=args.bam, db_path=args.db, meta_path=args.meta,
+			           len_min_mult=args.len_min, len_max_mult=args.len_max)
 		elif args.command == 'merge':
 			merge.run(output_db=args.output, input_dbs=args.inputs)
 		elif args.command == 'run':

@@ -109,11 +109,13 @@ ont-sma meta -i raw_pod5/ -o Output/summary.tsv
 
 Streams BAM reads, computes per-read metrics (basecall quality, Levenshtein distance), and inserts rows into the `Reads` table. Commits in batches of 10 000 reads.
 
-| Flag           | Description                                  |
-| -------------- | -------------------------------------------- |
-| `-b`, `--bam`  | Input BAM file (**required**)                |
-| `-d`, `--db`   | Target SQLite database (**required**)        |
-| `-m`, `--meta` | Metadata TSV from `meta` step (**required**) |
+| Flag              | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `-b`, `--bam`     | Input BAM file (**required**)                                               |
+| `-d`, `--db`      | Target SQLite database (**required**)                                       |
+| `-m`, `--meta`    | Metadata TSV from `meta` step (**required**)                                |
+| `--len-min MULT`  | Minimum read length as a multiplier of target length (default: `0.5`)       |
+| `--len-max MULT`  | Maximum read length as a multiplier of target length (default: `2.0`)       |
 
 ```bash
 ont-sma ingest \
@@ -155,6 +157,11 @@ ref:         "path/to/target.fa"
 
 outdir:      "Output"
 summary_tsv: "Output/summary.tsv"
+
+# Optional: read length filter (multipliers of target reference length).
+# Reads outside [tgt_len × len_min_mult, tgt_len × len_max_mult] are skipped.
+#len_min_mult: 0.5
+#len_max_mult: 2.0
 ```
 
 ---

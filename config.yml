@@ -10,3 +10,9 @@ ref:         "path/to/target.fa"          # Single-sequence reference FASTA
 
 outdir:      "Output"                     # Directory for DB output
 summary_tsv: "Output/summary.tsv"         # Intermediate: pod5 end-reason metadata
+
+# Optional: read length filter (multipliers of tgt_reflen). Reads outside
+# [tgt_reflen * len_min_mult, tgt_reflen * len_max_mult] are skipped before alignment.
+# Defaults: 0.5 (50%) and 2.0 (200%). Set to 0.0 / very large to disable.
+#len_min_mult: 0.5
+#len_max_mult: 2.0

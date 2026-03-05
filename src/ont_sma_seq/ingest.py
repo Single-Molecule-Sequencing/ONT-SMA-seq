@@ -17,6 +17,11 @@ EXPECTED_TABLES = {"Reads", "Mods", "Exp", "Target"}
 # Number of reads to process between intermediate commits
 BATCH_SIZE = 10_000
 
+# Default length filter multipliers (fraction of tgt_reflen)
+# Reads outside [tgt_len * LENGTH_MIN_MULT, tgt_len * LENGTH_MAX_MULT] are filtered.
+LENGTH_MIN_MULT = 0.5
+LENGTH_MAX_MULT = 2.0
+
 
 def parse_bam_filename(bam_path: Path):
 	"""
@@ -78,9 +83,18 @@ def load_end_reasons(tsv_path):
 	return pd.Series(df.end_reason.values, index=df.read_id).to_dict()
 
 
-def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
+def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
+        len_min_mult=LENGTH_MIN_MULT, len_max_mult=LENGTH_MAX_MULT):
 	"""
 	Main ingestion logic.
+
+	Args:
+		bam_path:     Path to input BAM.
+		db_path:      Path to target SQLite database.
+		meta_path:    Path to pod5 summary TSV.
+		batch_size:   Reads per commit batch.
+		len_min_mult: Minimum read length as a multiplier of tgt_reflen.
+		len_max_mult: Maximum read length as a multiplier of tgt_reflen.
 
 	Raises:
 		ValueError: If the BAM filename cannot be parsed or the tier token is unknown.
@@ -121,7 +135,9 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 		if not row:
 			raise RuntimeError("[ingest] No Target reference in DB. Run 'init' first.")
 		tgt_id, tgt_seq, tgt_len = row
-		print(f"[ingest] Target Loaded: {tgt_id} ({tgt_len} bp)")
+		len_min = int(tgt_len * len_min_mult)
+		len_max = int(tgt_len * len_max_mult)
+		print(f"[ingest] Target Loaded: {tgt_id} ({tgt_len} bp) | Length filter: [{len_min}, {len_max}] ({len_min_mult}x–{len_max_mult}x)")
 
 		# Validate mod_bitflag against Mods table
 		c.execute("SELECT 1 FROM Mods WHERE mod_bitflag = ?", (mods,))
@@ -140,8 +156,11 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 		count_total = 0
 		count_processed = 0
 		count_skipped = 0
+		count_filtered = 0
 		count_non_primary = 0
 		count_unknown_er = 0
+
+		batch = []
 
 		sql = '''INSERT INTO Reads (
 					uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
@@ -165,9 +184,13 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 				count_skipped += 1
 				continue
 
+			read_len = len(seq)
+			if not (len_min <= read_len <= len_max):
+				count_filtered += 1
+				continue
+
 			# read_id is the raw sequencer UUID; retained in full for traceability
 			read_id = read.query_name
-			read_len = len(seq)
 
 			q_bc = calculate_q_bc(quals)
 
@@ -181,7 +204,7 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 
 			uniq_id = f"{exp_id}_{tier}{ver}t{trim}m{mods}_{read_id}"
 
-			c.execute(sql, (
+			batch.append((
 				uniq_id, exp_id, tgt_id, read_id, seq, read_len,
 				tier, ver, trim, mods,
 				ed, q_bc, q_ld, er_val
@@ -189,16 +212,21 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):
 
 			count_processed += 1
 			if count_processed % batch_size == 0:
+				c.executemany(sql, batch)
 				conn.commit()
+				batch.clear()
 				print(f"  ...committed {count_processed} reads", end='\r')
 
-		# Final commit for the last partial batch
+		# Final flush for the last partial batch
+		if batch:
+			c.executemany(sql, batch)
 		conn.commit()
 		print(f"\n[ingest] Complete.")
 		print(f"  - Total Records: {count_total}")
 		print(f"  - Non-primary:   {count_non_primary}")
-		print(f"  - Processed:     {count_processed}")
+		print(f"  - Len-filtered:  {count_filtered}")
 		print(f"  - Skipped:       {count_skipped}")
+		print(f"  - Processed:     {count_processed}")
 		print(f"  - Unknown ER:    {count_unknown_er}")
 
 	except Exception:
