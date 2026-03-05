@@ -10,4 +10,4 @@ Provides CLI entry point `ont-sma` with subcommands:
   run     — chain all steps from a config.yml
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

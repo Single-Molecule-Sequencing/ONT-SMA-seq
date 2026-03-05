@@ -111,13 +111,13 @@ ont-sma meta -i raw_pod5/ -o Output/summary.tsv
 
 Streams BAM reads, computes per-read metrics (basecall quality, Levenshtein distance), and inserts rows into the `Reads` table. Commits in batches of 10 000 reads.
 
-| Flag              | Description                                                                 |
-| ----------------- | --------------------------------------------------------------------------- |
-| `-b`, `--bam`     | Input BAM file (**required**)                                               |
-| `-d`, `--db`      | Target SQLite database (**required**)                                       |
-| `-m`, `--meta`    | Metadata TSV from `meta` step (**required**)                                |
-| `--len-min MULT`  | Minimum read length as a multiplier of target length (default: `0.5`)       |
-| `--len-max MULT`  | Maximum read length as a multiplier of target length (default: `2.0`)       |
+| Flag             | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `-b`, `--bam`    | Input BAM file (**required**)                                         |
+| `-d`, `--db`     | Target SQLite database (**required**)                                 |
+| `-m`, `--meta`   | Metadata TSV from `meta` step (**required**)                          |
+| `--len-min MULT` | Minimum read length as a multiplier of target length (default: `0.5`) |
+| `--len-max MULT` | Maximum read length as a multiplier of target length (default: `2.0`) |
 
 ```bash
 ont-sma ingest \
@@ -214,8 +214,9 @@ Contains metrics for every read processed.
 | `exp_id`      | TEXT (FK)     | Experiment ID.                                |
 | `tgt_id`      | TEXT (FK)     | Target Sequence ID.                           |
 | `read_id`     | TEXT          | Original ONT Read UUID.                       |
-| `readseq`     | TEXT          | The Basecalled Read Sequence.                 |
 | `readlen`     | INT           | Length of the Read.                           |
+| `readseq`     | TEXT          | The Basecalled Read Sequence.                 |
+| `readscr`     | TEXT          | Phred+33 ASCII quality string.                |
 | `model_tier`  | TEXT          | Basecaller tier (`f`=fast, `h`=hac, `s`=sup). |
 | `model_ver`   | TEXT          | Basecaller version (e.g., 5.2.0).             |
 | `trim`        | INT           | Barcode trimming status (0 or 1).             |

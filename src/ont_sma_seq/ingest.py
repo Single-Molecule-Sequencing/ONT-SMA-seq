@@ -184,10 +184,10 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 		batch = []
 
 		sql = '''INSERT INTO Reads (
-					uniq_id, exp_id, tgt_id, read_id, readseq, readlen,
+					uniq_id, exp_id, tgt_id, read_id, readlen, readseq, readscr,
 					model_tier, model_ver, trim, mod_bitflag,
 					ed, q_bc, q_ld, ER
-				 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
+				 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'''
 
 		for read in samfile:
 			count_total += 1
@@ -204,6 +204,8 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 			if not seq or not quals:
 				count_skipped += 1
 				continue
+
+			scr = ''.join(chr(q + 33) for q in quals)
 
 			read_len = len(seq)
 			if not (len_min <= read_len <= len_max):
@@ -226,7 +228,7 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 			uniq_id = f"{exp_id}_{tier}{ver}t{trim}m{mods}_{read_id}"
 
 			batch.append((
-				uniq_id, exp_id, tgt_id, read_id, seq, read_len,
+				uniq_id, exp_id, tgt_id, read_id, read_len, seq, scr,
 				tier, ver, trim, mods,
 				ed, q_bc, q_ld, er_val
 			))

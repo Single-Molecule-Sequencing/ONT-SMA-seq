@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ont-sma-seq"
-version = "0.1.0"
+version = "0.2.0"
 description = "ONT Single-Molecule-Accuracy Sequencing"
 authors = [{ name = "Henry Li", email = "hrli@umich.edu" }]
 classifiers = [
