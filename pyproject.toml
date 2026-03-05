@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ont-sma-seq"
+version = "0.1.0"
+description = "ONT Single-Molecule-Accuracy Sequencing"
+authors = [{ name = "Henry Li", email = "hrli@umich.edu" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+]
+
+requires-python = ">=3.8"
+dependencies = [
+    "pysam",
+    "pod5",
+    "edlib",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+analysis = ["matplotlib", "seaborn"]
+
+[project.scripts]
+ont-sma = "ont_sma_seq.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
