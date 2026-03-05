@@ -1,9 +1,9 @@
 # ingest.py
 # Main logic for ingesting BAM reads into the SQLite database.
 
-import csv
 import edlib
 import math
+import pandas as pd
 import pysam
 import sqlite3
 from pathlib import Path
@@ -73,12 +73,9 @@ def calculate_q_ld(ed: int, ref_len: int) -> float:
 def load_end_reasons(tsv_path):
 	"""Loads Read ID -> End Reason mapping from TSV."""
 	print(f"[ingest] Loading Pod5 Summary from {tsv_path}...")
-	er_map = {}
-	with open(tsv_path, newline='') as f:
-		reader = csv.DictReader(f, delimiter='\t')
-		for row in reader:
-			er_map[row['read_id']] = row['end_reason']
-	return er_map
+	df = pd.read_csv(tsv_path, sep='\t', usecols=['read_id', 'end_reason'],
+					 dtype=str, engine='c')
+	return pd.Series(df.end_reason.values, index=df.read_id).to_dict()
 
 
 def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE):

@@ -19,6 +19,7 @@ dependencies = [
     "pysam",
     "pod5",
     "edlib",
+    "pandas",
     "pyyaml",
 ]
 
