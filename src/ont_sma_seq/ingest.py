@@ -152,6 +152,13 @@ def run(bam_path, db_path, meta_path, batch_size=BATCH_SIZE,
 		# Stream BAM
 		samfile = pysam.AlignmentFile(bam_file, "rb", check_sq=False)
 
+		# Report total BAM record count
+		bam_total = samfile.mapped + samfile.unmapped
+		if bam_total >= 0:
+			print(f"[ingest] BAM: {bam_total:,} total records")
+		else:
+			print(f"[ingest] BAM: record count unavailable (unindexed) — progress shown per batch")
+
 		print("[ingest] Processing reads...")
 		count_total = 0
 		count_processed = 0
