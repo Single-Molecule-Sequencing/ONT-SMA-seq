@@ -17,6 +17,7 @@ publish/
 reports/
 intermediate/
 plots/
+Output/
 
 # Development dirs
 dev/
