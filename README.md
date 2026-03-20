@@ -152,18 +152,20 @@ ont-sma merge -o master.db run1.db run2.db run3.db
 Used by `ont-sma run`. Copy and edit `config.yml`:
 
 ```yaml
-exp_id:      "FAL12345_20260129-IF_SMA"
-bam:         "path/to/reads.bam"
-pod5_dir:    "path/to/pod5/"
-ref:         "path/to/target.fa"
+exp_id:       "FAL12345_20260129-IF_SMA"   # FlowCellID_SampleID_Alias
+bam:          "path/to/reads.bam"          # Raw uBAM
+model_tier:   "sup"                        # Basecalling model tier (e.g. "sup", "hac", "fast")
+model_ver:    "5.0.0"                      # Basecalling model version
+trim:         "yes"                        # Set trimming status on/off ("yes"/"no")
+mods_bitflag: "10"
+pod5_dir:     "path/to/pod5/"              # Raw Pod5 directory
+ref:          "path/to/target.fa"          # Single-sequence reference FASTA
 
-outdir:      "Output"
-summary_tsv: "Output/summary.tsv"
+outdir:       "Output"                     # Directory for DB output
+summary_tsv:  "Output/summary.tsv"         # Intermediate: pod5 end-reason metadata
 
-# Optional: read length filter (multipliers of target reference length).
-# Reads outside [tgt_len × len_min_mult, tgt_len × len_max_mult] are skipped.
-#len_min_mult: 0.5
-#len_max_mult: 2.0
+len_min_mult: 0.5
+len_max_mult: 2.0
 ```
 
 ---
