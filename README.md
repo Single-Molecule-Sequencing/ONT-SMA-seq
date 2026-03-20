@@ -240,12 +240,25 @@ Stores the single target sequence for this database.
 
 ### `Mods` Table
 
-Static lookup table.
+Static lookup table. 4-bit encoding: bit 3 = `6mA` (independent), bits 2–0 = C-mod enum (0 = none, 1–4 mutually exclusive).
 
 | Column        | Type         | Description                                                     |
 | ------------- | ------------ | --------------------------------------------------------------- |
 | `mod_bitflag` | **INT (PK)** | 4-bit flag: bit 3 = `6mA`, bits 2–0 = C-mod enum (0=none, 1–4). |
 | `mods`        | TEXT         | Modifications present.                                          |
+
+| `mod_bitflag` | `mods`         |
+| ------------- | -------------- |
+| 0             | non            |
+| 1             | 5mCG_5hmCG     |
+| 2             | 5mC_5hmC       |
+| 3             | 4mC_5mC        |
+| 4             | 5mC            |
+| 8             | 6mA            |
+| 9             | 6mA,5mCG_5hmCG |
+| 10            | 6mA,5mC_5hmC   |
+| 11            | 6mA,4mC_5mC    |
+| 12            | 6mA,5mC        |
 
 ### `Exp` Table
 
