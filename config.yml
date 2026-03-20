@@ -4,10 +4,10 @@
 # All paths can be absolute or relative to the working directory.
 
 exp_id:       "FAL12345_20260129-IF_SMA"   # FlowCellID_SampleID_Alias
-bam:          "path/to/reads.bam"          # Raw uBAM (filename encodes metadata)
+bam:          "path/to/reads.bam"          # Raw uBAM
 model_tier:   "sup"                        # Basecalling model tier (e.g. "sup", "hac", "fast")
 model_ver:    "5.0.0"                      # Basecalling model version
-trim:         "yes"                        # Turn trimming on/off ("yes"/"no")
+trim:         "yes"                        # Set trimming status on/off ("yes"/"no")
 mods_bitflag: "10"
 pod5_dir:     "path/to/pod5/"              # Raw Pod5 directory
 ref:          "path/to/target.fa"          # Single-sequence reference FASTA
