@@ -9,6 +9,7 @@ from ont_sma_seq import init
 from ont_sma_seq import meta
 from ont_sma_seq import ingest
 from ont_sma_seq import merge
+from ont_sma_seq import report
 
 _REQUIRED_KEYS = ["bam", "pod5_dir", "ref", "outdir", "summary_tsv"]
 
@@ -183,6 +184,19 @@ def main():
 	parser_merge.add_argument("inputs", nargs="+",
 		help="One or more source .db files to merge")
 
+	# --- report ---
+	parser_report = subparsers.add_parser('report',
+		help='Generate presentation report from a completed DB')
+	parser_report.add_argument("-d", "--db", required=True,
+		help="Path to a completed SMA SQLite database")
+	parser_report.add_argument("-o", "--outdir", default=None,
+		help="Output directory for report artifacts [default: <db_dir>/report]")
+	parser_report.add_argument("--format", dest="fmt", default="pptx",
+		choices=["pptx", "md", "html"],
+		help="Output format [%(default)s]")
+	parser_report.add_argument("--gemini-key", default=None,
+		help="Google AI API key for Gemini narrative (or set GEMINI_API_KEY env var)")
+
 	# --- run ---
 	parser_run = subparsers.add_parser('run', help='Run full pipeline from a config.yml')
 	parser_run.add_argument("-c", "--config", default="config.yml",
@@ -206,6 +220,9 @@ def main():
 			           len_min_mult=args.len_min, len_max_mult=args.len_max)
 		elif args.command == 'merge':
 			merge.run(output_db=args.output, input_dbs=args.inputs)
+		elif args.command == 'report':
+			report.run(db_path=args.db, out_dir=args.outdir,
+			           fmt=args.fmt, gemini_api_key=args.gemini_key)
 		elif args.command == 'run':
 			run_pipeline(args.config)
 	except Exception as e:

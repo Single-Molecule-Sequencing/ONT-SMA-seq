@@ -31,6 +31,12 @@ This exposes the `ont-sma` command. To also install downstream analysis dependen
 pip install -e ".[analysis]"
 ```
 
+To also install report generation dependencies (`python-pptx`, `google-generativeai`):
+
+```bash
+pip install -e ".[report]"
+```
+
 ---
 
 ## Manifest
@@ -42,6 +48,7 @@ All modules are located in `src/ont_sma_seq/`.
 * `meta.py`: Wraps `pod5 view` to extract `read_id` and `end_reason` into a TSV.
 * `ingest.py`: Streams BAM reads, computes per-read quality and Levenshtein metrics, and populates the `Reads` table in batches.
 * `merge.py`: Merges one or more per-run databases into a master database using `INSERT OR IGNORE`.
+* `report.py`: Generates presentation reports (PPTX, Markdown) from a completed SMA database, with optional AI-powered narrative via Gemini.
 * `cli.py`: Argparse entry point exposing all subcommands and the `run` pipeline orchestrator.
 
 ## Usage
@@ -66,6 +73,7 @@ ont-sma init    -d <db> -r <ref>
 ont-sma meta    -i <pod5_dir> [-o <summary.tsv>]
 ont-sma ingest  -b <bam> -d <db> -m <summary.tsv>
 ont-sma merge   -o <master.db> <input_db> [<input_db> ...]
+ont-sma report  -d <db> [--format pptx|md|html] [--gemini-key <key>]
 ```
 
 #### `mkdb`
@@ -144,6 +152,47 @@ Merges one or more per-run databases into a master database using `INSERT OR IGN
 ```bash
 ont-sma merge -o master.db run1.db run2.db run3.db
 ```
+
+#### `report`
+
+Generates a presentation report from a completed SMA database. Produces summary statistics (JSON), publication-quality figures (PNG), and a slide deck (PPTX) or Markdown report. Optionally uses the Gemini API for AI-generated narrative text.
+
+| Flag              | Description                                                             |
+| ----------------- | ----------------------------------------------------------------------- |
+| `-d`, `--db`      | Path to a completed SMA SQLite database (**required**)                 |
+| `-o`, `--outdir`  | Output directory for report artifacts (default: `<db_dir>/report`)     |
+| `--format`        | Output format: `pptx`, `md`, or `html` (default: `pptx`)              |
+| `--gemini-key`    | Google AI API key for Gemini narrative (or set `GEMINI_API_KEY` env var) |
+
+```bash
+# Basic report (template narrative, PPTX output)
+ont-sma report -d Output/SMA_FAL12345_20260129-IF_SMA.db
+
+# Markdown report with AI-generated narrative
+ont-sma report -d Output/SMA_FAL12345_20260129-IF_SMA.db --format md --gemini-key YOUR_KEY
+
+# Using environment variable for API key
+export GEMINI_API_KEY=YOUR_KEY
+ont-sma report -d Output/SMA_FAL12345_20260129-IF_SMA.db
+```
+
+The report subcommand produces the following artifacts in the output directory:
+
+```
+report/
+├── summary.json          # Aggregate statistics (always generated)
+├── figures/
+│   ├── readlen_hist.png  # Read-length distribution
+│   ├── quality_dist.png  # q_bc and q_ld violin plots
+│   ├── ed_vs_readlen.png # Edit distance vs. read length
+│   └── end_reason.png    # End-reason bar chart
+└── report_<EXP_ID>.pptx  # Slide deck (or .md for markdown)
+```
+
+**Notes:**
+- Figures require `matplotlib` and `seaborn` (included in `[analysis]` and `[report]` extras). If unavailable, the report is generated without figures.
+- The PPTX format requires `python-pptx` (included in `[report]` extra). If unavailable, falls back to Markdown.
+- Gemini narrative is optional. Without an API key, the report uses deterministic template text. Only aggregate statistics are sent to the API — never raw sequence data.
 
 ---
 

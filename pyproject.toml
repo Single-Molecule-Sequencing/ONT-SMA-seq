@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 analysis = ["matplotlib", "seaborn"]
+report = ["matplotlib", "seaborn", "python-pptx", "google-generativeai"]
 
 [project.scripts]
 ont-sma = "ont_sma_seq.cli:main"

@@ -7,6 +7,7 @@ Provides CLI entry point `ont-sma` with subcommands:
   meta    — extract end_reason metadata from Pod5 files
   ingest  — stream BAM reads and populate the database
   merge   — combine multiple per-run databases into a master DB
+  report  — generate presentation reports (PPTX / Markdown) from a completed DB
   run     — chain all steps from a config.yml
 """
 
