@@ -134,7 +134,7 @@ def _check_analysis_deps():
 	except ImportError as exc:
 		raise ImportError(
 			"Figure generation requires matplotlib and seaborn. "
-			"Install with:  pip install ont-sma-seq[analysis]"
+			"Install with:  pip install ont-sma-seq[report]  or  pip install ont-sma-seq[analysis]"
 		) from exc
 
 
