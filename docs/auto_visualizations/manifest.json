@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-05-13T03:06:01-04:00",
+  "schema_version": 2,
+  "repo": "ONT-SMA-seq",
+  "repo_kind": "repo",
+  "repo_id": "ONT-SMA-seq",
+  "title": "ONT-SMA-seq",
+  "purpose": "[![DOI](https://zenodo.org/badge/1110728589.svg)](https://doi.org/10.5281/zenodo.18872468)",
+  "atlas_pdf": "docs/auto_visualizations/ont-sma-seq_atlas.pdf",
+  "figure_count": 7,
+  "figures": [
+    {
+      "id": "status_card",
+      "title": "Paper status card",
+      "caption": "papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-12 (0d ago).",
+      "png": "docs/auto_visualizations/png/status_card.png",
+      "pdf": "docs/auto_visualizations/pdf/status_card.pdf",
+      "png_bytes": 114344,
+      "pdf_bytes": 45527
+    },
+    {
+      "id": "section_status",
+      "title": "Manuscript section status",
+      "caption": "No manuscript layout was detected (no main.tex, sections/, or numbered manuscript/*.md).",
+      "png": "docs/auto_visualizations/png/section_status.png",
+      "pdf": "docs/auto_visualizations/pdf/section_status.pdf",
+      "png_bytes": 33718,
+      "pdf_bytes": 8936
+    },
+    {
+      "id": "abstract_keywords",
+      "title": "Abstract keyword surface",
+      "caption": "Abstract not found \u2014 section file 00_abstract.* or \\begin{abstract} missing.",
+      "png": "docs/auto_visualizations/png/abstract_keywords.png",
+      "pdf": "docs/auto_visualizations/pdf/abstract_keywords.pdf",
+      "png_bytes": 34098,
+      "pdf_bytes": 9597
+    },
+    {
+      "id": "figure_plan",
+      "title": "Figure plan vs. reality",
+      "caption": "No figure references detected. Either the manuscript uses non-LaTeX figure syntax or no figures are cited yet.",
+      "png": "docs/auto_visualizations/png/figure_plan.png",
+      "pdf": "docs/auto_visualizations/pdf/figure_plan.pdf",
+      "png_bytes": 32863,
+      "pdf_bytes": 10323
+    },
+    {
+      "id": "data_preview",
+      "title": "Data preview",
+      "caption": "No CSV/TSV with at least one numeric column was detected outside excluded directories.",
+      "png": "docs/auto_visualizations/png/data_preview.png",
+      "pdf": "docs/auto_visualizations/pdf/data_preview.pdf",
+      "png_bytes": 35658,
+      "pdf_bytes": 10807
+    },
+    {
+      "id": "activity_strip",
+      "title": "90-day activity",
+      "caption": "23 commits in last 90 days across 2 contributor(s). Last: 2026-05-12 (0d ago) \u2014 README: link to cross-run end-reason atlas (2026-05-12)",
+      "png": "docs/auto_visualizations/png/activity_strip.png",
+      "pdf": "docs/auto_visualizations/pdf/activity_strip.pdf",
+      "png_bytes": 114792,
+      "pdf_bytes": 30113
+    },
+    {
+      "id": "lineage_graph",
+      "title": "Lineage from papers.yaml",
+      "caption": "Repo did not match any papers.yaml entry by id, path, or github_repo.",
+      "png": "docs/auto_visualizations/png/lineage_graph.png",
+      "pdf": "docs/auto_visualizations/pdf/lineage_graph.pdf",
+      "png_bytes": 37776,
+      "pdf_bytes": 9783
+    }
+  ]
+}

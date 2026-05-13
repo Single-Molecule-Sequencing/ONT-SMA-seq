@@ -296,3 +296,9 @@ Lab end-reason QC now has a **cross-run aggregator** that this paper's runs are 
 | Spec | [2026-05-12 design](https://github.com/Single-Molecule-Sequencing/ont-end-reason/blob/main/docs/superpowers/specs/2026-05-12-end-reason-atlas-design.md) |
 
 Every `ont-end-reason analyze distribution` run with `--baseline-store` (default on) auto-populates the qc_baseline store, so future re-runs of this paper's analysis surface outliers automatically.
+
+<!-- AUTO-VISUALIZE:START -->
+
+<sub>Auto-visualization atlas (regenerated 2026-05-13): [combined PDF](docs/auto_visualizations/ont-sma-seq_atlas.pdf) · [figures](docs/auto_visualizations/png/) · [index](docs/auto_visualizations/auto_visualization_index.md) · 7 figures</sub>
+
+<!-- AUTO-VISUALIZE:END -->
