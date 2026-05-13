@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-13T05:41:55-04:00",
+  "generated_at": "2026-05-13T05:42:11-04:00",
   "schema_version": 3,
   "repo": "ONT-SMA-seq",
   "repo_kind": "repo",
@@ -15,8 +15,8 @@
       "caption": "papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-13 (0d ago).",
       "png": "docs/auto_visualizations/png/status_card.png",
       "pdf": "docs/auto_visualizations/pdf/status_card.pdf",
-      "png_bytes": 108501,
-      "pdf_bytes": 43361
+      "png_bytes": 110771,
+      "pdf_bytes": 44010
     },
     {
       "id": "section_status",
@@ -57,11 +57,11 @@
     {
       "id": "activity_strip",
       "title": "90-day activity",
-      "caption": "24 commits in last 90 days across 2 contributor(s). Last: 2026-05-13 (0d ago) \u2014 docs: refresh auto-visualization bundle",
+      "caption": "25 commits in last 90 days across 2 contributor(s). Last: 2026-05-13 (0d ago) \u2014 figures: refresh auto-visualization atlas",
       "png": "docs/auto_visualizations/png/activity_strip.png",
       "pdf": "docs/auto_visualizations/pdf/activity_strip.pdf",
-      "png_bytes": 112861,
-      "pdf_bytes": 29342
+      "png_bytes": 112765,
+      "pdf_bytes": 29008
     },
     {
       "id": "lineage_graph",
@@ -82,7 +82,7 @@
       "summary": "README present with 12583 characters.",
       "path": "README.md",
       "url": null,
-      "timestamp": "2026-05-13T09:38:52+00:00"
+      "timestamp": "2026-05-13T09:41:55+00:00"
     },
     {
       "id": "repo.ci",
@@ -99,10 +99,10 @@
       "label": "Git activity",
       "source_type": "git",
       "status": "fresh",
-      "summary": "Last commit fba6060 was 0 day(s) ago: docs: refresh auto-visualization bundle",
+      "summary": "Last commit 008b286 was 0 day(s) ago: figures: refresh auto-visualization atlas",
       "path": null,
       "url": null,
-      "timestamp": "2026-05-13T03:15:31-04:00"
+      "timestamp": "2026-05-13T05:41:55-04:00"
     },
     {
       "id": "paper.registry",
@@ -142,7 +142,7 @@
       "summary": "4/4 expected generated artifact(s) exist.",
       "path": "docs/auto_visualizations",
       "url": null,
-      "timestamp": "2026-05-13T09:38:52+00:00"
+      "timestamp": "2026-05-13T09:41:55+00:00"
     },
     {
       "id": "graph.context",

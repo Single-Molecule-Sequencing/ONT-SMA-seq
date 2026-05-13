@@ -1,6 +1,6 @@
 # Auto-visualization synthesis: ONT\-SMA\-seq
 
-Generated: `2026-05-13T05:41:55-04:00`
+Generated: `2026-05-13T05:42:11-04:00`
 
 - Repo kind: `repo`
 - Purpose: \[\!\[DOI\]\(https://zenodo\.org/badge/1110728589\.svg\)\]\(https://doi\.org/10\.5281/zenodo\.18872468\)
@@ -22,7 +22,7 @@ Generated: `2026-05-13T05:41:55-04:00`
 | --- | --- | --- | --- |
 | `repo.readme` | repo | present | README present with 12583 characters\. |
 | `repo.ci` | ci | missing | No CI workflow/configuration file detected\. |
-| `git.activity` | git | fresh | Last commit fba6060 was 0 day\(s\) ago: docs: refresh auto\-visualization bundle |
+| `git.activity` | git | fresh | Last commit 008b286 was 0 day\(s\) ago: figures: refresh auto\-visualization atlas |
 | `paper.registry` | registry | missing | No papers\.yaml entry matched this repo\. |
 | `manuscript.figures` | figures | missing | No manuscript figure assets or references were detected\. |
 | `data.plottable` | data | missing | No CSV/TSV with numeric columns was detected\. |
@@ -41,5 +41,5 @@ Generated: `2026-05-13T05:41:55-04:00`
 | 3 | Abstract keyword surface | [PNG](png/abstract_keywords.png) | [PDF](pdf/abstract_keywords.pdf) | Abstract not found — section file 00\_abstract\.\* or \\begin\{abstract\} missing\. |
 | 4 | Figure plan vs\. reality | [PNG](png/figure_plan.png) | [PDF](pdf/figure_plan.pdf) | No figure references detected\. Either the manuscript uses non\-LaTeX figure syntax or no figures are cited yet\. |
 | 5 | Data preview | [PNG](png/data_preview.png) | [PDF](pdf/data_preview.pdf) | No CSV/TSV with at least one numeric column was detected outside excluded directories\. |
-| 6 | 90\-day activity | [PNG](png/activity_strip.png) | [PDF](pdf/activity_strip.pdf) | 24 commits in last 90 days across 2 contributor\(s\)\. Last: 2026\-05\-13 \(0d ago\) — docs: refresh auto\-visualization bundle |
+| 6 | 90\-day activity | [PNG](png/activity_strip.png) | [PDF](pdf/activity_strip.pdf) | 25 commits in last 90 days across 2 contributor\(s\)\. Last: 2026\-05\-13 \(0d ago\) — figures: refresh auto\-visualization atlas |
 | 7 | Lineage from papers\.yaml | [PNG](png/lineage_graph.png) | [PDF](pdf/lineage_graph.pdf) | Repo did not match any papers\.yaml entry by id, path, or github\_repo\. |
