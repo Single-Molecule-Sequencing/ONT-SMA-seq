@@ -299,6 +299,6 @@ Every `ont-end-reason analyze distribution` run with `--baseline-store` (default
 
 <!-- AUTO-VISUALIZE:START -->
 
-<sub>Auto-visualization atlas (regenerated 2026-05-13): [combined PDF](docs/auto_visualizations/ont-sma-seq_atlas.pdf) · [figures](docs/auto_visualizations/png/) · [index](docs/auto_visualizations/auto_visualization_index.md) · 7 figures</sub>
+<sub>Auto-visualization atlas (regenerated 2026-05-13): [combined PDF](docs/auto_visualizations/ont-sma-seq_atlas.pdf) · [figures](docs/auto_visualizations/png/) · [index](docs/auto_visualizations/auto_visualization_index.html) · [markdown](docs/auto_visualizations/auto_visualization_index.md) · Trust: medium · Next: Add a lightweight CI check · 7 figures</sub>
 
 <!-- AUTO-VISUALIZE:END -->

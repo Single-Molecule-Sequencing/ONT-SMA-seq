@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto-visualization explorer: ONT-SMA-seq</title>
+  <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7fb;
+        --panel: #ffffff;
+        --ink: #1f2937;
+        --muted: #667085;
+        --line: #d9e2ec;
+        --accent: #0f766e;
+        --accent-strong: #115e59;
+        --warn: #b7791f;
+        --low: #b42318;
+        --shadow: 0 16px 40px rgba(31, 41, 55, 0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      a { color: var(--accent-strong); text-decoration: none; font-weight: 700; }
+      a:hover { text-decoration: underline; }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 1.5rem;
+        align-items: center;
+        padding: 1.4rem clamp(1rem, 4vw, 2.5rem);
+        background: linear-gradient(135deg, #102a43 0%, #0f766e 100%);
+        color: white;
+      }
+      .topbar h1 { margin: 0.2rem 0; font-size: clamp(1.6rem, 3vw, 2.5rem); }
+      .topbar p { margin: 0; max-width: 72rem; color: rgba(255, 255, 255, 0.85); }
+      .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; font-weight: 800; }
+      .top-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; justify-content: flex-end; }
+      .top-actions a,
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.42rem 0.7rem;
+        background: rgba(255, 255, 255, 0.14);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+      }
+      .badge.high { background: rgba(22, 163, 74, 0.35); }
+      .badge.medium { background: rgba(245, 158, 11, 0.35); }
+      .badge.low { background: rgba(220, 38, 38, 0.35); }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(13rem, 0.8fr) minmax(0, 2fr) minmax(18rem, 1fr);
+        gap: 1rem;
+        padding: 1rem;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        box-shadow: var(--shadow);
+      }
+      .figure-nav,
+      .command-rail { padding: 1rem; align-self: start; position: sticky; top: 1rem; }
+      .figure-nav ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.55rem; }
+      .figure-nav li { padding: 0.65rem; border: 1px solid var(--line); border-radius: 0.8rem; }
+      .figure-nav span { display: block; color: var(--muted); font-size: 0.78rem; margin-top: 0.2rem; }
+      .preview-pane { display: grid; gap: 1rem; }
+      .preview-section,
+      .thumbnail-section { padding: 1rem; }
+      .preview-figure { margin: 0; }
+      .preview-figure img,
+      .thumb-card img {
+        display: block;
+        width: 100%;
+        border-radius: 0.8rem;
+        border: 1px solid var(--line);
+        background: white;
+      }
+      .preview-figure figcaption { margin-top: 0.8rem; color: var(--muted); }
+      .asset-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.55rem; }
+      .asset-links a {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.35rem 0.6rem;
+        background: #f8fafc;
+      }
+      .thumbnail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; }
+      .thumb-card { border: 1px solid var(--line); border-radius: 0.9rem; padding: 0.75rem; background: #fbfdff; }
+      .thumb-card h3 { margin: 0.7rem 0 0.35rem; font-size: 1rem; }
+      .thumb-card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+      .command-section { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 1rem; }
+      .command-section:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+      .metric-list { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.8rem; }
+      .metric-list dt { color: var(--muted); }
+      .metric-list dd { margin: 0; font-weight: 700; }
+      pre {
+        overflow-x: auto;
+        padding: 0.75rem;
+        border-radius: 0.75rem;
+        background: #111827;
+        color: #e5e7eb;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      th, td { text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); padding: 0.45rem; }
+      th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+      .status-pill {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 0.2rem 0.45rem;
+        background: #eef6ff;
+        color: #174a7c;
+        font-weight: 700;
+      }
+      .empty-state { border: 1px dashed var(--line); border-radius: 0.9rem; padding: 1rem; color: var(--muted); }
+      @media (max-width: 1050px) {
+        .layout { grid-template-columns: 1fr; }
+        .figure-nav,
+        .command-rail { position: static; }
+      }
+    </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Auto-visualization figure explorer</p>
+      <h1>ONT-SMA-seq</h1>
+      <p>[![DOI](https://zenodo.org/badge/1110728589.svg)](https://doi.org/10.5281/zenodo.18872468)</p>
+    </div>
+    <div class="top-actions" aria-label="Bundle links and trust badges">
+      <span class="badge medium">Trust: medium</span>
+      <span class="badge">Freshness: fresh</span>
+      <span class="badge">Evidence: missing context</span>
+      <a href="ont-sma-seq_atlas.pdf">Atlas PDF</a>
+      <a href="auto_visualization_index.md">Markdown</a>
+      <a href="png/">PNG directory</a>
+      <a href="pdf/">PDF directory</a>
+    </div>
+  </header>
+  <main class="layout">
+    <nav class="panel figure-nav" aria-labelledby="figure-nav-title">
+      <h2 id="figure-nav-title">Figure navigator</h2>
+      <ol>
+        <li><a href="#figure-1-status-card">1. Paper status card</a><span>status_card</span></li>
+<li><a href="#figure-2-section-status">2. Manuscript section status</a><span>section_status</span></li>
+<li><a href="#figure-3-abstract-keywords">3. Abstract keyword surface</a><span>abstract_keywords</span></li>
+<li><a href="#figure-4-figure-plan">4. Figure plan vs. reality</a><span>figure_plan</span></li>
+<li><a href="#figure-5-data-preview">5. Data preview</a><span>data_preview</span></li>
+<li><a href="#figure-6-activity-strip">6. 90-day activity</a><span>activity_strip</span></li>
+<li><a href="#figure-7-lineage-graph">7. Lineage from papers.yaml</a><span>lineage_graph</span></li>
+      </ol>
+    </nav>
+    <section class="preview-pane" aria-label="Figure previews">
+      <section class="panel preview-section" aria-labelledby="preview-title">
+        <h2 id="preview-title">Large preview section</h2>
+        
+        <figure class="preview-figure">
+          <a href="png/status_card.png" data-repo-path="docs/auto_visualizations/png/status_card.png">
+            <img src="png/status_card.png" alt="Paper status card">
+          </a>
+          <figcaption>
+            <strong>Paper status card</strong>
+            <p>papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-13 (0d ago).</p>
+            <div class="asset-links">
+              <a href="png/status_card.png" data-repo-path="docs/auto_visualizations/png/status_card.png">PNG</a>
+              <a href="pdf/status_card.pdf" data-repo-path="docs/auto_visualizations/pdf/status_card.pdf">PDF</a>
+            </div>
+          </figcaption>
+        </figure>
+        
+      </section>
+      <section class="panel thumbnail-section" aria-labelledby="thumbnail-title">
+        <h2 id="thumbnail-title">Thumbnail grid</h2>
+        <div class="thumbnail-grid">
+          
+        <article class="thumb-card" id="figure-1-status-card">
+          <a href="png/status_card.png" data-repo-path="docs/auto_visualizations/png/status_card.png">
+            <img src="png/status_card.png" alt="Paper status card">
+          </a>
+          <div>
+            <h3>1. Paper status card</h3>
+            <p>papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-13 (0d ago).</p>
+            <div class="asset-links">
+              <a href="png/status_card.png" data-repo-path="docs/auto_visualizations/png/status_card.png">PNG</a>
+              <a href="pdf/status_card.pdf" data-repo-path="docs/auto_visualizations/pdf/status_card.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-2-section-status">
+          <a href="png/section_status.png" data-repo-path="docs/auto_visualizations/png/section_status.png">
+            <img src="png/section_status.png" alt="Manuscript section status">
+          </a>
+          <div>
+            <h3>2. Manuscript section status</h3>
+            <p>No manuscript layout was detected (no main.tex, sections/, or numbered manuscript/*.md).</p>
+            <div class="asset-links">
+              <a href="png/section_status.png" data-repo-path="docs/auto_visualizations/png/section_status.png">PNG</a>
+              <a href="pdf/section_status.pdf" data-repo-path="docs/auto_visualizations/pdf/section_status.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-3-abstract-keywords">
+          <a href="png/abstract_keywords.png" data-repo-path="docs/auto_visualizations/png/abstract_keywords.png">
+            <img src="png/abstract_keywords.png" alt="Abstract keyword surface">
+          </a>
+          <div>
+            <h3>3. Abstract keyword surface</h3>
+            <p>Abstract not found — section file 00_abstract.* or \begin{abstract} missing.</p>
+            <div class="asset-links">
+              <a href="png/abstract_keywords.png" data-repo-path="docs/auto_visualizations/png/abstract_keywords.png">PNG</a>
+              <a href="pdf/abstract_keywords.pdf" data-repo-path="docs/auto_visualizations/pdf/abstract_keywords.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-4-figure-plan">
+          <a href="png/figure_plan.png" data-repo-path="docs/auto_visualizations/png/figure_plan.png">
+            <img src="png/figure_plan.png" alt="Figure plan vs. reality">
+          </a>
+          <div>
+            <h3>4. Figure plan vs. reality</h3>
+            <p>No figure references detected. Either the manuscript uses non-LaTeX figure syntax or no figures are cited yet.</p>
+            <div class="asset-links">
+              <a href="png/figure_plan.png" data-repo-path="docs/auto_visualizations/png/figure_plan.png">PNG</a>
+              <a href="pdf/figure_plan.pdf" data-repo-path="docs/auto_visualizations/pdf/figure_plan.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-5-data-preview">
+          <a href="png/data_preview.png" data-repo-path="docs/auto_visualizations/png/data_preview.png">
+            <img src="png/data_preview.png" alt="Data preview">
+          </a>
+          <div>
+            <h3>5. Data preview</h3>
+            <p>No CSV/TSV with at least one numeric column was detected outside excluded directories.</p>
+            <div class="asset-links">
+              <a href="png/data_preview.png" data-repo-path="docs/auto_visualizations/png/data_preview.png">PNG</a>
+              <a href="pdf/data_preview.pdf" data-repo-path="docs/auto_visualizations/pdf/data_preview.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-6-activity-strip">
+          <a href="png/activity_strip.png" data-repo-path="docs/auto_visualizations/png/activity_strip.png">
+            <img src="png/activity_strip.png" alt="90-day activity">
+          </a>
+          <div>
+            <h3>6. 90-day activity</h3>
+            <p>24 commits in last 90 days across 2 contributor(s). Last: 2026-05-13 (0d ago) — docs: refresh auto-visualization bundle</p>
+            <div class="asset-links">
+              <a href="png/activity_strip.png" data-repo-path="docs/auto_visualizations/png/activity_strip.png">PNG</a>
+              <a href="pdf/activity_strip.pdf" data-repo-path="docs/auto_visualizations/pdf/activity_strip.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+
+        <article class="thumb-card" id="figure-7-lineage-graph">
+          <a href="png/lineage_graph.png" data-repo-path="docs/auto_visualizations/png/lineage_graph.png">
+            <img src="png/lineage_graph.png" alt="Lineage from papers.yaml">
+          </a>
+          <div>
+            <h3>7. Lineage from papers.yaml</h3>
+            <p>Repo did not match any papers.yaml entry by id, path, or github_repo.</p>
+            <div class="asset-links">
+              <a href="png/lineage_graph.png" data-repo-path="docs/auto_visualizations/png/lineage_graph.png">PNG</a>
+              <a href="pdf/lineage_graph.pdf" data-repo-path="docs/auto_visualizations/pdf/lineage_graph.pdf">PDF</a>
+            </div>
+          </div>
+        </article>
+        
+        </div>
+      </section>
+    </section>
+    <aside class="panel command-rail" aria-labelledby="command-rail-title">
+      <h2 id="command-rail-title">Command rail</h2>
+      <section class="command-section">
+        <h3>Next action</h3>
+        <p><strong>Add a lightweight CI check</strong></p>
+        <p>No CI configuration was detected, so automated trust is weaker.</p>
+        
+        <p>Evidence IDs: <code>repo.ci</code></p>
+      </section>
+      <section class="command-section">
+        <h3>Trust signals</h3>
+        <dl class="metric-list">
+          <dt>Level</dt><dd>medium</dd>
+          <dt>Score</dt><dd>59</dd>
+          <dt>Freshness</dt><dd>fresh</dd>
+          <dt>Evidence complete</dt><dd>False</dd>
+        </dl>
+        <h4>Missing sources</h4>
+        <ul><li>graph.context</li>
+<li>maturity.score</li>
+<li>experiments.context</li>
+<li>handoffs.context</li></ul>
+        <h4>Warnings</h4>
+        <ul><li>CI configuration is missing.</li>
+<li>4 contextual evidence source(s) are missing.</li></ul>
+      </section>
+      <section class="command-section">
+        <h3>Evidence matrix</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Evidence</th>
+              <th>Source</th>
+              <th>Status</th>
+              <th>Summary</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>repo.readme</code></td><td>repo</td><td><span class="status-pill">present</span></td><td>README present with 12583 characters.</td><td><code>README.md</code></td></tr>
+<tr><td><code>repo.ci</code></td><td>ci</td><td><span class="status-pill">missing</span></td><td>No CI workflow/configuration file detected.</td><td><code>—</code></td></tr>
+<tr><td><code>git.activity</code></td><td>git</td><td><span class="status-pill">fresh</span></td><td>Last commit fba6060 was 0 day(s) ago: docs: refresh auto-visualization bundle</td><td><code>—</code></td></tr>
+<tr><td><code>paper.registry</code></td><td>registry</td><td><span class="status-pill">missing</span></td><td>No papers.yaml entry matched this repo.</td><td><code>/home/farnum248/repos/lab-papers/papers.yaml</code></td></tr>
+<tr><td><code>manuscript.figures</code></td><td>figures</td><td><span class="status-pill">missing</span></td><td>No manuscript figure assets or references were detected.</td><td><code>—</code></td></tr>
+<tr><td><code>data.plottable</code></td><td>data</td><td><span class="status-pill">missing</span></td><td>No CSV/TSV with numeric columns was detected.</td><td><code>—</code></td></tr>
+<tr><td><code>generated.output</code></td><td>generated-output</td><td><span class="status-pill">present</span></td><td>4/4 expected generated artifact(s) exist.</td><td><code>docs/auto_visualizations</code></td></tr>
+<tr><td><code>graph.context</code></td><td>knowledge-graph</td><td><span class="status-pill">missing</span></td><td>Lab knowledge graph evidence is not connected to this bundle yet.</td><td><code>—</code></td></tr>
+<tr><td><code>maturity.score</code></td><td>maturity</td><td><span class="status-pill">missing</span></td><td>No maturity score source was found.</td><td><code>—</code></td></tr>
+<tr><td><code>experiments.context</code></td><td>experiments</td><td><span class="status-pill">missing</span></td><td>No recent experiment context source was found.</td><td><code>—</code></td></tr>
+<tr><td><code>handoffs.context</code></td><td>handoffs</td><td><span class="status-pill">missing</span></td><td>No handoff context source was found.</td><td><code>—</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>

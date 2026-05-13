@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-05-13T03:06:01-04:00",
-  "schema_version": 2,
+  "generated_at": "2026-05-13T05:41:55-04:00",
+  "schema_version": 3,
   "repo": "ONT-SMA-seq",
   "repo_kind": "repo",
   "repo_id": "ONT-SMA-seq",
@@ -12,11 +12,11 @@
     {
       "id": "status_card",
       "title": "Paper status card",
-      "caption": "papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-12 (0d ago).",
+      "caption": "papers.yaml-driven status card. 0 manuscript words, 0 unresolved TODOs, 0 figures on disk, last commit 2026-05-13 (0d ago).",
       "png": "docs/auto_visualizations/png/status_card.png",
       "pdf": "docs/auto_visualizations/pdf/status_card.pdf",
-      "png_bytes": 114344,
-      "pdf_bytes": 45527
+      "png_bytes": 108501,
+      "pdf_bytes": 43361
     },
     {
       "id": "section_status",
@@ -57,11 +57,11 @@
     {
       "id": "activity_strip",
       "title": "90-day activity",
-      "caption": "23 commits in last 90 days across 2 contributor(s). Last: 2026-05-12 (0d ago) \u2014 README: link to cross-run end-reason atlas (2026-05-12)",
+      "caption": "24 commits in last 90 days across 2 contributor(s). Last: 2026-05-13 (0d ago) \u2014 docs: refresh auto-visualization bundle",
       "png": "docs/auto_visualizations/png/activity_strip.png",
       "pdf": "docs/auto_visualizations/pdf/activity_strip.pdf",
-      "png_bytes": 114792,
-      "pdf_bytes": 30113
+      "png_bytes": 112861,
+      "pdf_bytes": 29342
     },
     {
       "id": "lineage_graph",
@@ -72,5 +72,151 @@
       "png_bytes": 37776,
       "pdf_bytes": 9783
     }
+  ],
+  "evidence": [
+    {
+      "id": "repo.readme",
+      "label": "README",
+      "source_type": "repo",
+      "status": "present",
+      "summary": "README present with 12583 characters.",
+      "path": "README.md",
+      "url": null,
+      "timestamp": "2026-05-13T09:38:52+00:00"
+    },
+    {
+      "id": "repo.ci",
+      "label": "CI configuration",
+      "source_type": "ci",
+      "status": "missing",
+      "summary": "No CI workflow/configuration file detected.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "git.activity",
+      "label": "Git activity",
+      "source_type": "git",
+      "status": "fresh",
+      "summary": "Last commit fba6060 was 0 day(s) ago: docs: refresh auto-visualization bundle",
+      "path": null,
+      "url": null,
+      "timestamp": "2026-05-13T03:15:31-04:00"
+    },
+    {
+      "id": "paper.registry",
+      "label": "Paper registry",
+      "source_type": "registry",
+      "status": "missing",
+      "summary": "No papers.yaml entry matched this repo.",
+      "path": "/home/farnum248/repos/lab-papers/papers.yaml",
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "manuscript.figures",
+      "label": "Manuscript figures",
+      "source_type": "figures",
+      "status": "missing",
+      "summary": "No manuscript figure assets or references were detected.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "data.plottable",
+      "label": "Plottable data",
+      "source_type": "data",
+      "status": "missing",
+      "summary": "No CSV/TSV with numeric columns was detected.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "generated.output",
+      "label": "Generated output",
+      "source_type": "generated-output",
+      "status": "present",
+      "summary": "4/4 expected generated artifact(s) exist.",
+      "path": "docs/auto_visualizations",
+      "url": null,
+      "timestamp": "2026-05-13T09:38:52+00:00"
+    },
+    {
+      "id": "graph.context",
+      "label": "Lab graph context",
+      "source_type": "knowledge-graph",
+      "status": "missing",
+      "summary": "Lab knowledge graph evidence is not connected to this bundle yet.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "maturity.score",
+      "label": "Maturity score",
+      "source_type": "maturity",
+      "status": "missing",
+      "summary": "No maturity score source was found.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "experiments.context",
+      "label": "Experiment context",
+      "source_type": "experiments",
+      "status": "missing",
+      "summary": "No recent experiment context source was found.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    },
+    {
+      "id": "handoffs.context",
+      "label": "Handoff context",
+      "source_type": "handoffs",
+      "status": "missing",
+      "summary": "No handoff context source was found.",
+      "path": null,
+      "url": null,
+      "timestamp": null
+    }
+  ],
+  "actions": [
+    {
+      "id": "add-ci",
+      "label": "Add a lightweight CI check",
+      "rationale": "No CI configuration was detected, so automated trust is weaker.",
+      "command": null,
+      "priority": 40,
+      "evidence_ids": [
+        "repo.ci"
+      ]
+    }
+  ],
+  "trust": {
+    "level": "medium",
+    "score": 59,
+    "freshness": "fresh",
+    "evidence_complete": false,
+    "missing_sources": [
+      "graph.context",
+      "maturity.score",
+      "experiments.context",
+      "handoffs.context"
+    ],
+    "warnings": [
+      "CI configuration is missing.",
+      "4 contextual evidence source(s) are missing."
+    ]
+  },
+  "missing_sources": [
+    "graph.context",
+    "maturity.score",
+    "experiments.context",
+    "handoffs.context"
   ]
 }
