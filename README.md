@@ -281,3 +281,18 @@ Stores experiment metadata parsed from the `exp_id`.
 | `sample_id`    | TEXT          | Library Prep Info (YYYYMMDD-INITIALS).              |
 | `alias`        | TEXT          | Experiment Alias.                                   |
 | `exp_desc`     | TEXT          | Experiment description.                             |
+
+---
+
+### 🗺️ Cross-run end-reason atlas (2026-05-12)
+
+Lab end-reason QC now has a **cross-run aggregator** that this paper's runs are automatically peer-compared against:
+
+| Resource | Link |
+|---|---|
+| Interactive dashboard | [silver-adventure-o322543.pages.github.io/#atlas](https://silver-adventure-o322543.pages.github.io/#atlas) |
+| Companion paper | [end-reason-paper](https://github.com/Single-Molecule-Sequencing/end-reason-paper) (fig8 reproducer) |
+| Tool | [ont-end-reason ≥0.2.0](https://pypi.org/project/ont-end-reason/) — `analyze atlas` subcommand |
+| Spec | [2026-05-12 design](https://github.com/Single-Molecule-Sequencing/ont-end-reason/blob/main/docs/superpowers/specs/2026-05-12-end-reason-atlas-design.md) |
+
+Every `ont-end-reason analyze distribution` run with `--baseline-store` (default on) auto-populates the qc_baseline store, so future re-runs of this paper's analysis surface outliers automatically.
